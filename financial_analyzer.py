@@ -151,6 +151,22 @@ class FinancialAnalyzer:
             logging.error(f"An unexpected error occurred: {e}")
             return None
 
+    def analyze_financial_health(self):
+        """
+        Analyzes the financial health of the company based on calculated ratios.
+
+        Returns:
+            dict: A dictionary containing the analysis results, or None if an error occurs.
+        """
+        ratios = self.calculate_ratios()
+        if ratios is None:
+            return None
+
+        analysis = {}
+        if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
+            analysis["Profit Margin"] = "Good" if ratios["Profit Margin"] > 0.1 else "Needs Improvement"
+        if "Debt-to-Asset Ratio" in ratios
+
 import streamlit as st
 # ... (your FinancialAnalyzer class) ...
 
