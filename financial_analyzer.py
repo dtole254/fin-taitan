@@ -68,7 +68,7 @@ class FinancialAnalyzer:
 
                         for col in df.columns:
                             try:
-                                df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float) #raw string
+                                df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float)
                             except (ValueError, AttributeError):
                                 pass
                         return df
@@ -160,6 +160,26 @@ class FinancialAnalyzer:
         """
         ratios = self.calculate_ratios()
         if ratios is None:
+            st.error("Unable to calculate financial ratios. Please check the financial data.")
+            logging.error("Unable to calculate financial ratios.")
             return None
 
-        analysis = {}
+        # Display analysis results
+        st.markdown(f"### Financial Health Analysis for {self.company_name}")
+        st.write("Below are the key financial ratios calculated based on the available data:")
+
+        # Convert ratios to a DataFrame for better display
+        analysis_df = pd.DataFrame(list(ratios.items()), columns=["Metric", "Value"])
+        st.table(analysis_df)
+
+        # Highlight specific metrics
+        if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
+            st.metric(label="Profit Margin", value=f"{ratios['Profit Margin']:.2%}")
+
+        if "Current Ratio" in ratios and ratios["Current Ratio"] is not None:
+            st.metric(label="Current Ratio", value=f"{ratios['Current Ratio']:.2f}")
+
+        # Add a bar chart for visualization
+        st.bar_chart(analysis_df.set_index("Metric")["Value"])
+
+        return ratios
