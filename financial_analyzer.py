@@ -11,7 +11,19 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class FinancialAnalyzer:
+    """
+    A class for analyzing financial data of a company.
+    """
+
     def __init__(self, company_name, website_url=None, financial_data=None):
+        """
+        Initializes the FinancialAnalyzer.
+
+        Args:
+            company_name (str): The name of the company.
+            website_url (str, optional): The URL of the company's website. Defaults to None.
+            financial_data (pd.DataFrame, optional): Pre-loaded financial data. Defaults to None.
+        """
         self.company_name = company_name
         self.website_url = website_url
         self.financial_data = financial_data
@@ -20,13 +32,19 @@ class FinancialAnalyzer:
             self.financial_data = self.scrape_financial_data()
 
     def scrape_financial_data(self):
+        """
+        Scrapes financial data from the company's website.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the scraped financial data, or None if an error occurs.
+        """
         if not self.website_url:
             st.error("Website URL not provided.")
             logging.error("Website URL not provided.")
             return None
 
         try:
-            response = requests.get(self.website_url)
+            response = requests.get(self.website_url, timeout=10)  # Add timeout
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
@@ -36,7 +54,7 @@ class FinancialAnalyzer:
                     data = []
                     rows = table.find_all("tr")
                     for row in rows:
-                        cols = row.find_all("td") or row.find_all("th")
+                        cols = row.find_all(["td", "th"])  # Handle both td and th
                         cols = [ele.text.strip() for ele in cols]
                         data.append(cols)
 
@@ -50,7 +68,7 @@ class FinancialAnalyzer:
 
                         for col in df.columns:
                             try:
-                                df[col] = df[col].str.replace('[$,()]', '', regex=True).astype(float)
+                                df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float) #raw string
                             except (ValueError, AttributeError):
                                 pass
                         return df
@@ -63,8 +81,18 @@ class FinancialAnalyzer:
             st.error(f"Error during scraping: {e}")
             logging.error(f"Error during scraping: {e}")
             return None
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+            logging.error(f"An unexpected error occurred: {e}")
+            return None
 
     def calculate_ratios(self):
+        """
+        Calculates financial ratios based on the scraped data.
+
+        Returns:
+            dict: A dictionary containing the calculated ratios, or None if an error occurs.
+        """
         if self.financial_data is None or not isinstance(self.financial_data, pd.DataFrame):
             st.error("Financial data is not available or is in the wrong format.")
             logging.error("Financial data is not available or is in the wrong format.")
@@ -93,7 +121,7 @@ class FinancialAnalyzer:
                 ratios["Debt-to-Asset Ratio"] = data[total_liabilities_col].iloc[-1] / data[total_assets_col].iloc[-1] if data[total_assets_col].iloc[-1] != 0 else None
 
             if current_assets_col and current_liabilities_col:
-                 ratios["Current Ratio"] = data[current_assets_col].iloc[-1] / data[current_liabilities_col].iloc[-1] if data[current_liabilities_col].iloc[-1] !=0 else None
+                ratios["Current Ratio"] = data[current_assets_col].iloc[-1] / data[current_liabilities_col].iloc[-1] if data[current_liabilities_col].iloc[-1] != 0 else None
 
             if total_equity_col and total_liabilities_col:
                 ratios["Debt-to-Equity Ratio"] = data[total_liabilities_col].iloc[-1] / data[total_equity_col].iloc[-1] if data[total_equity_col].iloc[-1] != 0 else None
@@ -111,39 +139,14 @@ class FinancialAnalyzer:
             logging.error(f"KeyError: {e}. Required financial data columns not found.")
             return None
         except TypeError as e:
-            st.error(f"TypeError: {e}. Check the type of your data.")
-            logging.error(f"TypeError: {e}. Check the type of your data.")
+            st.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue: {e}")
+            logging.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue: {e}")
             return None
         except IndexError as e:
-            st.error(f"IndexError: {e}. Check the structure of your data.")
-            logging.error(f"IndexError: {e}. Check the structure of your data.")
+            st.error(f"IndexError: {e}. Check the structure of your data. Data may be missing: {e}")
+            logging.error(f"IndexError: {e}. Check the structure of your data. Data may be missing: {e}")
             return None
-
-    def analyze_financial_health(self):
-        ratios = self.calculate_ratios()
-        if ratios is None:
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+            logging.error(f"An unexpected error occurred: {e}")
             return None
-
-        analysis = {}
-        if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
-            analysis["Profit Margin"] = "Good" if ratios["Profit Margin"] > 0.1 else "Needs Improvement"
-        if "Debt-to-Asset Ratio" in ratios and ratios["Debt-to-Asset Ratio"] is not None:
-            analysis["Debt-to-Asset Ratio"] = "Low Risk" if ratios["Debt-to-Asset Ratio"] < 0.5 else "High Risk"
-        if "Current Ratio" in ratios and ratios["Current Ratio"] is not None:
-            analysis["Current Ratio"] = "Good Liquidity" if ratios["Current Ratio"] > 1.5 else "Poor Liquidity"
-        if "Debt-to-Equity Ratio" in ratios and ratios["Debt-to-Equity Ratio"] is not None:
-            analysis["Debt-to-Equity Ratio"] = "Low Leverage" if ratios["Debt-to-Equity Ratio"] < 1 else "High Leverage"
-        if "Cash Ratio" in ratios and ratios["Cash Ratio"] is not None:
-            analysis["Cash Ratio"] = "Strong immediate liquidity" if ratios["Cash Ratio"] > 0.5 else "Weak immediate liquidity"
-        if "Inventory Turnover" in ratios and ratios["Inventory Turnover"] is not None:
-            analysis["Inventory Turnover"] = "Efficient Inventory Management" if ratios["Inventory Turnover"] > 5 else "Inefficient Inventory Management"
-
-        return analysis
-
-    def search_and_scrape(self, company_name):
-        search_query = urllib.parse.quote_plus(f"{company_name} financial statements")
-        url = f"https://www.google.com/search?q={search_query}"
-
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            response = urllib.request.
