@@ -1,76 +1,78 @@
+import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
+import urllib.parse
+import urllib.request
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class FinancialAnalyzer:
     def __init__(self, company_name, website_url=None, financial_data=None):
         self.company_name = company_name
         self.website_url = website_url
-        self.financial_data = financial_data  # Can be a dict or a DataFrame
+        self.financial_data = financial_data
 
         if website_url and financial_data is None:
             self.financial_data = self.scrape_financial_data()
 
     def scrape_financial_data(self):
-        """Scrapes financial data from a company's website."""
         if not self.website_url:
-            print("Website URL not provided.")
+            st.error("Website URL not provided.")
+            logging.error("Website URL not provided.")
             return None
 
         try:
             response = requests.get(self.website_url)
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
-            # Example: Searching for a table with financial data (adapt to website structure)
-            # This is a highly simplified example. Real-world scraping requires much more robust logic.
             tables = soup.find_all("table")
             for table in tables:
                 if "balance sheet" in table.text.lower() or "income statement" in table.text.lower() or "cash flow" in table.text.lower():
                     data = []
                     rows = table.find_all("tr")
                     for row in rows:
-                        cols = row.find_all("td") or row.find_all("th") #handle th tags in headers
+                        cols = row.find_all("td") or row.find_all("th")
                         cols = [ele.text.strip() for ele in cols]
                         data.append(cols)
 
                     df = pd.DataFrame(data)
 
-                    #clean dataframe
                     if not df.empty:
                         df.columns = df.iloc[0]
                         df = df[1:]
                         df = df.dropna(axis=1, how='all')
                         df = df.dropna(axis=0, how='all')
 
-                        #try to convert to numeric
                         for col in df.columns:
                             try:
                                 df[col] = df[col].str.replace('[$,()]', '', regex=True).astype(float)
                             except (ValueError, AttributeError):
-                                pass #ignore columns that cannot be converted.
+                                pass
                         return df
 
-            print("Financial data table not found.")
+            st.error("Financial data table not found.")
+            logging.error("Financial data table not found.")
             return None
 
         except requests.exceptions.RequestException as e:
-            print(f"Error during scraping: {e}")
+            st.error(f"Error during scraping: {e}")
+            logging.error(f"Error during scraping: {e}")
             return None
 
     def calculate_ratios(self):
-        """Calculates various financial ratios."""
         if self.financial_data is None or not isinstance(self.financial_data, pd.DataFrame):
-            print("Financial data is not available or is in the wrong format.")
+            st.error("Financial data is not available or is in the wrong format.")
+            logging.error("Financial data is not available or is in the wrong format.")
             return None
 
         try:
-            # Example calculations (adapt to available data)
-            # Example: Assuming data is in a DataFrame with columns like 'Revenue', 'Net Income', 'Total Assets', 'Total Liabilities'
             data = self.financial_data
 
-            # Find columns that look like the ones we need, allowing for variations in naming.
             revenue_col = next((col for col in data.columns if re.search(r'revenue|sales', col, re.IGNORECASE)), None)
             net_income_col = next((col for col in data.columns if re.search(r'net income|profit', col, re.IGNORECASE)), None)
             total_assets_col = next((col for col in data.columns if re.search(r'total assets', col, re.IGNORECASE)), None)
@@ -105,23 +107,24 @@ class FinancialAnalyzer:
             return ratios
 
         except KeyError as e:
-            print(f"KeyError: {e}. Required financial data columns not found.")
+            st.error(f"KeyError: {e}. Required financial data columns not found.")
+            logging.error(f"KeyError: {e}. Required financial data columns not found.")
             return None
         except TypeError as e:
-            print(f"TypeError: {e}. Check the type of your data.")
+            st.error(f"TypeError: {e}. Check the type of your data.")
+            logging.error(f"TypeError: {e}. Check the type of your data.")
             return None
         except IndexError as e:
-            print(f"IndexError: {e}. Check the structure of your data.")
+            st.error(f"IndexError: {e}. Check the structure of your data.")
+            logging.error(f"IndexError: {e}. Check the structure of your data.")
             return None
 
     def analyze_financial_health(self):
-        """Analyzes the financial health based on calculated ratios."""
         ratios = self.calculate_ratios()
         if ratios is None:
             return None
 
         analysis = {}
-        # Example interpretation (adapt to specific ratios and thresholds)
         if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
             analysis["Profit Margin"] = "Good" if ratios["Profit Margin"] > 0.1 else "Needs Improvement"
         if "Debt-to-Asset Ratio" in ratios and ratios["Debt-to-Asset Ratio"] is not None:
@@ -137,12 +140,10 @@ class FinancialAnalyzer:
 
         return analysis
 
-# Example Usage
-company_url = "https://investors.apple.com/financials/default.aspx" #Example website
-company_name = "Apple Inc."
-analyzer = FinancialAnalyzer(company_name, company_url)
-ratios = analyzer.calculate_ratios()
-analysis = analyzer.analyze_financial_health()
+def search_and_scrape(company_name):
+    search_query = urllib.parse.quote_plus(f"{company_name} financial statements")
+    url = f"https://www.google.com/search?q={search_query}"
 
-if ratios:
-    print
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req
