@@ -127,23 +127,4 @@ class FinancialAnalyzer:
         analysis = {}
         if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
             analysis["Profit Margin"] = "Good" if ratios["Profit Margin"] > 0.1 else "Needs Improvement"
-        if "Debt-to-Asset Ratio" in ratios and ratios["Debt-to-Asset Ratio"] is not None:
-            analysis["Debt-to-Asset Ratio"] = "Low Risk" if ratios["Debt-to-Asset Ratio"] < 0.5 else "High Risk"
-        if "Current Ratio" in ratios and ratios["Current Ratio"] is not None:
-            analysis["Current Ratio"] = "Good Liquidity" if ratios["Current Ratio"] > 1.5 else "Poor Liquidity"
-        if "Debt-to-Equity Ratio" in ratios and ratios["Debt-to-Equity Ratio"] is not None:
-            analysis["Debt-to-Equity Ratio"] = "Low Leverage" if ratios["Debt-to-Equity Ratio"] < 1 else "High Leverage"
-        if "Cash Ratio" in ratios and ratios["Cash Ratio"] is not None:
-            analysis["Cash Ratio"] = "Strong immediate liquidity" if ratios["Cash Ratio"] > 0.5 else "Weak immediate liquidity"
-        if "Inventory Turnover" in ratios and ratios["Inventory Turnover"] is not None:
-            analysis["Inventory Turnover"] = "Efficient Inventory Management" if ratios["Inventory Turnover"] > 5 else "Inefficient Inventory Management"
-
-        return analysis
-
-def search_and_scrape(company_name):
-    search_query = urllib.parse.quote_plus(f"{company_name} financial statements")
-    url = f"https://www.google.com/search?q={search_query}"
-
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req
+        if "Debt-to-Asset Ratio" in ratios and ratios["Debt-to-Asset Ratio"]
