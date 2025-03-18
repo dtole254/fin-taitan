@@ -150,3 +150,31 @@ class FinancialAnalyzer:
             st.error(f"An unexpected error occurred: {e}")
             logging.error(f"An unexpected error occurred: {e}")
             return None
+
+import streamlit as st
+# ... (your FinancialAnalyzer class) ...
+
+st.title("Financial Analyzer")
+
+company_name = st.text_input("Enter Company Name:")
+website_url = st.text_input("Enter Website URL:")
+
+if st.button("Analyze"):
+    if company_name and website_url:
+        analyzer = FinancialAnalyzer(company_name, website_url)
+        with st.spinner("Analyzing..."):
+            financial_data = analyzer.financial_data
+            ratios = analyzer.calculate_ratios()
+            analysis = analyzer.analyze_financial_health()
+
+        if financial_data is not None:
+            st.subheader("Financial Data")
+            st.dataframe(financial_data)
+        if ratios is not None:
+            st.subheader("Financial Ratios")
+            st.write(ratios)
+        if analysis is not None:
+            st.subheader("Financial Health Analysis")
+            st.write(analysis)
+    else:
+        st.error("Please enter both company name and website URL.")
