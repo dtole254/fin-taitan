@@ -145,4 +145,5 @@ def search_and_scrape(company_name):
     url = f"https://www.google.com/search?q={search_query}"
 
     try:
-        req = urllib.request.Request(url,
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req)
