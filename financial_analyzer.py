@@ -116,15 +116,4 @@ class FinancialAnalyzer:
             return None
         except IndexError as e:
             st.error(f"IndexError: {e}. Check the structure of your data.")
-            logging.error(f"IndexError: {e}. Check the structure of your data.")
-            return None
-
-    def analyze_financial_health(self):
-        ratios = self.calculate_ratios()
-        if ratios is None:
-            return None
-
-        analysis = {}
-        if "Profit Margin" in ratios and ratios["Profit Margin"] is not None:
-            analysis["Profit Margin"] = "Good" if ratios["Profit Margin"] > 0.1 else "Needs Improvement"
-        if "Debt-to-Asset Ratio" in ratios and ratios["Debt-to-Asset Ratio"]
+            logging.error(f"IndexError: {e}. Check the structure of your data
