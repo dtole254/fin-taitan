@@ -140,10 +140,4 @@ class FinancialAnalyzer:
 
         return analysis
 
-def search_and_scrape(company_name):
-    search_query = urllib.parse.quote_plus(f"{company_name} financial statements")
-    url = f"https://www.google.com/search?q={search_query}"
-
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req)
+    def search_and_scrape(self, company)
