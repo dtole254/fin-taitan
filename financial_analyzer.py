@@ -244,20 +244,45 @@ class FinancialAnalyzer:
         try:
             data = self.financial_data
 
-            def find_column(pattern):
-                return next((col for col in data.columns if re.search(pattern, col, re.IGNORECASE)), None)
+            def find_column(patterns):
+                """
+                Finds a column in the DataFrame that matches any of the given patterns.
+
+                Args:
+                    patterns (list): A list of regex patterns to search for.
+
+                Returns:
+                    str: The name of the matching column, or None if no match is found.
+                """
+                for pattern in patterns:
+                    match = next((col for col in data.columns if re.search(pattern, col, re.IGNORECASE)), None)
+                    if match:
+                        return match
+                return None
+
+            # Define patterns for financial terms
+            revenue_patterns = [r'revenue', r'sales', r'total revenue', r'net sales']
+            net_income_patterns = [r'net income', r'profit', r'net profit', r'earnings']
+            total_assets_patterns = [r'total assets', r'assets']
+            total_liabilities_patterns = [r'total liabilities', r'liabilities']
+            current_assets_patterns = [r'current assets', r'short-term assets']
+            current_liabilities_patterns = [r'current liabilities', r'short-term liabilities']
+            total_equity_patterns = [r'total equity', r'shareholders equity', r'owners equity']
+            cash_patterns = [r'cash', r'cash equivalents', r'cash and cash equivalents']
+            inventory_patterns = [r'inventory', r'stock']
+            cogs_patterns = [r'cost of goods sold', r'cogs', r'cost of sales']
 
             # Identify required columns
-            revenue_col = find_column(r'revenue|sales')
-            net_income_col = find_column(r'net income|profit')
-            total_assets_col = find_column(r'total assets')
-            total_liabilities_col = find_column(r'total liabilities')
-            current_assets_col = find_column(r'current assets')
-            current_liabilities_col = find_column(r'current liabilities')
-            total_equity_col = find_column(r'total equity')
-            cash_col = find_column(r'cash')
-            inventory_col = find_column(r'inventory')
-            cogs_col = find_column(r'cost of goods sold|cogs')
+            revenue_col = find_column(revenue_patterns)
+            net_income_col = find_column(net_income_patterns)
+            total_assets_col = find_column(total_assets_patterns)
+            total_liabilities_col = find_column(total_liabilities_patterns)
+            current_assets_col = find_column(current_assets_patterns)
+            current_liabilities_col = find_column(current_liabilities_patterns)
+            total_equity_col = find_column(total_equity_patterns)
+            cash_col = find_column(cash_patterns)
+            inventory_col = find_column(inventory_patterns)
+            cogs_col = find_column(cogs_patterns)
 
             # Check for missing columns
             missing_columns = []
@@ -511,6 +536,49 @@ def process_extracted_text_to_dataframe(text):
         logging.error(f"Error processing extracted text into DataFrame: {e}")
         return None
 
+def scrape_google_financial_data(company_name):
+    """
+    Scrapes financial data and news from Google for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing financial data and relevant news.
+    """
+    try:
+        base_url = "https://www.google.com/search"
+        headers = {"User-Agent": USER_AGENT}
+        params = {"q": f"{company_name} financial data", "hl": "en"}
+
+        # Fetch financial data
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract financial data (e.g., stock price, market cap, etc.)
+        financial_data = {}
+        stock_price = soup.find("div", class_="BNeawe iBp4i AP7Wnd")
+        if stock_price:
+            financial_data["Stock Price"] = stock_price.text
+
+        market_cap = soup.find("div", text=re.compile(r"Market cap", re.IGNORECASE))
+        if market_cap and market_cap.find_next_sibling("div"):
+            financial_data["Market Cap"] = market_cap.find_next_sibling("div").text
+
+        # Extract relevant news
+        news = []
+        news_items = soup.find_all("div", class_="BNeawe vvjwJb AP7Wnd")
+        for item in news_items:
+            title = item.text
+            link = item.find_parent("a")["href"]
+            news.append({"title": title, "link": f"https://www.google.com{link}"})
+
+        return {"financial_data": financial_data, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping Google financial data for {company_name}: {e}")
+        return None
+
 def main():
     st.title("Financial Analyzer App")
     st.write("Analyze financial data of companies.")
@@ -571,10 +639,18 @@ def main():
                         st.error("Failed to extract text from the image. Please ensure the image is clear and contains readable text.")
 
             # Handle scraping if no file is uploaded
-            if financial_data is None or (isinstance(financial_data, pd.DataFrame) and financial_data.empty):
-                if company_name and website_url:
-                    st.warning("Scraping is disallowed by robots.txt. Please upload a file instead.")
-                    return
+            if not financial_data and company_name:
+                st.info(f"Scraping financial data and news for {company_name} from Google...")
+                google_data = scrape_google_financial_data(company_name)
+                if google_data:
+                    st.write("Scraped Financial Data:")
+                    st.json(google_data.get("financial_data", {}))
+
+                    st.write("Relevant News:")
+                    for news_item in google_data.get("news", []):
+                        st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+                else:
+                    st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
 
             # Display and analyze financial data
             if financial_data is not None and not financial_data.empty:
