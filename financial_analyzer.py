@@ -21,6 +21,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+import os  # For environment variable management
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -490,6 +491,24 @@ def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
         st.error(f"An error occurred while processing the PDF: {e}")
         return None
 
+def preprocess_image(image):
+    """
+    Preprocesses an image to improve OCR accuracy.
+
+    Args:
+        image: The image to preprocess.
+
+    Returns:
+        Image: The preprocessed image.
+    """
+    from PIL import ImageEnhance, ImageFilter
+
+    image = image.convert("L")  # Convert to grayscale
+    image = image.filter(ImageFilter.MedianFilter())  # Noise reduction
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(2)  # Increase contrast
+    return image
+
 def extract_text_from_image(image_file):
     """
     Extracts text from an image file using OCR.
@@ -502,6 +521,7 @@ def extract_text_from_image(image_file):
     """
     try:
         image = Image.open(image_file)
+        image = preprocess_image(image)  # Preprocess the image
         text = pytesseract.image_to_string(image)
         return text
     except Exception as e:
@@ -610,7 +630,6 @@ def scrape_google_financial_data(company_name):
         return {"financial_data": financial_data, "news": news}
     except Exception as e:
         logging.error(f"Error scraping Google financial data for {company_name}: {e}")
-        st.error("An unexpected error occurred while fetching data. Please try again later.")
         return None
 
 def scrape_yahoo_finance(stock_symbol):
@@ -657,7 +676,10 @@ def scrape_yahoo_finance(stock_symbol):
         logging.error(f"Error scraping Yahoo Finance for {stock_symbol}: {e}")
         return None
 
-def scrape_alpha_vantage(stock_symbol, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
+# API Key Management: Use environment variables for Alpha Vantage API key
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "YOUR_DEFAULT_API_KEY")
+
+def scrape_alpha_vantage(stock_symbol, api_key=ALPHA_VANTAGE_API_KEY):
     """
     Fetches financial data from Alpha Vantage for the specified stock symbol.
 
@@ -800,6 +822,27 @@ def scrape_world_stock_exchanges(stock_symbol, exchange_code):
     except Exception as e:
         logging.error(f"Error scraping world stock exchanges for {stock_symbol} on {exchange_code}: {e}")
         return None
+
+def validate_data(data):
+    """
+    Validates the scraped data to ensure it is in the correct format.
+
+    Args:
+        data: The data to validate.
+
+    Returns:
+        bool: True if the data is valid, False otherwise.
+    """
+    if not data or not isinstance(data, dict):
+        logging.error("Invalid data format: Data is empty or not a dictionary.")
+        return False
+    return True
+
+def rate_limit():
+    """
+    Implements a delay to respect rate limits.
+    """
+    time.sleep(2)  # Delay of 2 seconds between requests
 
 def aggregate_data(stock_symbol, exchange_code=None):
     """
@@ -955,39 +998,39 @@ def main():
                     analyzer = FinancialAnalyzer(company_name=company_name, website_url=company_url)
                     financial_data = analyzer.scrape_financial_data()
                     if financial_data is not None:
-                        st.write("Scraped Financial Data:")
-                        st.dataframe(financial_data)
+                        with st.expander("Scraped Financial Data"):
+                            st.dataframe(financial_data)
                     else:
                         st.error("Failed to scrape financial data from the provided URL.")
                 elif stock_symbol:
                     st.info(f"Scraping financial data and news for {company_name} ({stock_symbol}) from {exchange_name}...")
                     aggregated_data = aggregate_data(stock_symbol, exchange_code)
                     if aggregated_data:
-                        st.write("Aggregated Financial Data:")
-                        st.json(aggregated_data.get("financial_data", {}))
+                        with st.expander("Aggregated Financial Data"):
+                            st.json(aggregated_data.get("financial_data", {}))
 
-                        st.write("Relevant News:")
-                        news_items = aggregated_data.get("news", [])
-                        if news_items:
-                            for news_item in news_items:
-                                st.markdown(f"- [{news_item['title']}]({news_item['link']})")
-                        else:
-                            st.info("No relevant news found for this company.")
+                        with st.expander("Relevant News"):
+                            news_items = aggregated_data.get("news", [])
+                            if news_items:
+                                for news_item in news_items:
+                                    st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+                            else:
+                                st.info("No relevant news found for this company.")
                     else:
                         st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
 
             # Display and analyze financial data
             if financial_data is not None and not financial_data.empty:
-                st.write("Financial Data:")
-                st.dataframe(financial_data)
+                with st.expander("Financial Data"):
+                    st.dataframe(financial_data)
 
-                st.write("Calculated Financial Ratios:")
-                analyzer = FinancialAnalyzer(company_name=stock_symbol, financial_data=financial_data)
-                ratios = analyzer.calculate_ratios()
-                if ratios:
-                    st.json(ratios)
-                else:
-                    st.warning("Could not calculate financial ratios. Check the data format.")
+                with st.expander("Calculated Financial Ratios"):
+                    analyzer = FinancialAnalyzer(company_name=stock_symbol, financial_data=financial_data)
+                    ratios = analyzer.calculate_ratios()
+                    if ratios:
+                        st.json(ratios)
+                    else:
+                        st.warning("Could not calculate financial ratios. Check the data format.")
             else:
                 st.error("Failed to process financial data. Check the file or URL.")
 
