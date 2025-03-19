@@ -613,18 +613,18 @@ def scrape_google_financial_data(company_name):
         st.error("An unexpected error occurred while fetching data. Please try again later.")
         return None
 
-def scrape_yahoo_finance(company_name):
+def scrape_yahoo_finance(stock_symbol):
     """
-    Scrapes financial data and news from Yahoo Finance for the specified company.
+    Scrapes financial data and news from Yahoo Finance for the specified stock symbol.
 
     Args:
-        company_name (str): The name of the company.
+        stock_symbol (str): The stock symbol (e.g., "NVDA" for NVIDIA).
 
     Returns:
         dict: A dictionary containing financial data and relevant news.
     """
     try:
-        base_url = f"https://finance.yahoo.com/quote/{company_name}"
+        base_url = f"https://finance.yahoo.com/quote/{stock_symbol}"
         headers = {"User-Agent": USER_AGENT}
         response = requests.get(base_url, headers=headers)
         response.raise_for_status()
@@ -636,7 +636,7 @@ def scrape_yahoo_finance(company_name):
             stock_price = soup.find("fin-streamer", {"data-field": "regularMarketPrice"}).text
             financial_data["Stock Price"] = stock_price
         except Exception as e:
-            logging.warning(f"Yahoo Finance: Stock price not found: {e}")
+            logging.warning(f"Yahoo Finance: Stock price not found for {stock_symbol}: {e}")
 
         # Extract relevant news
         news = []
@@ -647,19 +647,22 @@ def scrape_yahoo_finance(company_name):
                 link = f"https://finance.yahoo.com{item.find('a')['href']}"
                 news.append({"title": title, "link": link})
         except Exception as e:
-            logging.warning(f"Yahoo Finance: News not found: {e}")
+            logging.warning(f"Yahoo Finance: News not found for {stock_symbol}: {e}")
 
         return {"financial_data": financial_data, "news": news}
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Yahoo Finance: HTTP error for {stock_symbol}: {e}")
+        return None
     except Exception as e:
-        logging.error(f"Error scraping Yahoo Finance for {company_name}: {e}")
+        logging.error(f"Error scraping Yahoo Finance for {stock_symbol}: {e}")
         return None
 
-def scrape_alpha_vantage(company_name, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
+def scrape_alpha_vantage(stock_symbol, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
     """
-    Fetches financial data from Alpha Vantage for the specified company.
+    Fetches financial data from Alpha Vantage for the specified stock symbol.
 
     Args:
-        company_name (str): The name of the company.
+        stock_symbol (str): The stock symbol (e.g., "NVDA" for NVIDIA).
         api_key (str): The API key for Alpha Vantage.
 
     Returns:
@@ -669,7 +672,7 @@ def scrape_alpha_vantage(company_name, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
         base_url = "https://www.alphavantage.co/query"
         params = {
             "function": "OVERVIEW",
-            "symbol": company_name,
+            "symbol": stock_symbol,
             "apikey": api_key
         }
         response = requests.get(base_url, params=params)
@@ -677,7 +680,7 @@ def scrape_alpha_vantage(company_name, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
         data = response.json()
 
         if "Symbol" not in data:
-            logging.warning(f"Alpha Vantage: No data found for {company_name}.")
+            logging.warning(f"Alpha Vantage: No data found for {stock_symbol}.")
             return None
 
         financial_data = {
@@ -687,8 +690,11 @@ def scrape_alpha_vantage(company_name, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
             "PE Ratio": data.get("PERatio"),
         }
         return {"financial_data": financial_data, "news": []}
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Alpha Vantage: HTTP error for {stock_symbol}: {e}")
+        return None
     except Exception as e:
-        logging.error(f"Error fetching data from Alpha Vantage for {company_name}: {e}")
+        logging.error(f"Error fetching data from Alpha Vantage for {stock_symbol}: {e}")
         return None
 
 def scrape_forbes(company_name):
@@ -725,12 +731,83 @@ def scrape_forbes(company_name):
         logging.error(f"Error scraping Forbes for {company_name}: {e}")
         return None
 
-def aggregate_data(company_name):
+def scrape_nairobi_stock_exchange(stock_symbol):
     """
-    Aggregates financial data and news from multiple sources.
+    Scrapes financial data from the Nairobi Stock Exchange (NSE) for the specified stock symbol.
 
     Args:
-        company_name (str): The name of the company.
+        stock_symbol (str): The stock symbol (e.g., "KCB" for KCB Group).
+
+    Returns:
+        dict: A dictionary containing financial data.
+    """
+    try:
+        base_url = f"https://www.nse.co.ke/market-statistics/equities.html"
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract financial data for the stock symbol
+        financial_data = {}
+        try:
+            table = soup.find("table", {"id": "equities-table"})
+            rows = table.find_all("tr")
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) > 0 and stock_symbol.upper() in cols[0].text:
+                    financial_data["Stock Symbol"] = cols[0].text.strip()
+                    financial_data["Last Price"] = cols[1].text.strip()
+                    financial_data["Change"] = cols[2].text.strip()
+                    financial_data["Volume"] = cols[3].text.strip()
+                    break
+        except Exception as e:
+            logging.warning(f"Nairobi Stock Exchange: Data not found for {stock_symbol}: {e}")
+
+        return {"financial_data": financial_data, "news": []}
+    except Exception as e:
+        logging.error(f"Error scraping Nairobi Stock Exchange for {stock_symbol}: {e}")
+        return None
+
+def scrape_world_stock_exchanges(stock_symbol, exchange_code):
+    """
+    Scrapes financial data from major world stock exchanges for the specified stock symbol.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "AAPL" for Apple).
+        exchange_code (str): The exchange code (e.g., "NASDAQ", "LSE", "HKEX").
+
+    Returns:
+        dict: A dictionary containing financial data.
+    """
+    try:
+        # Example: Use Yahoo Finance for global stock exchanges
+        base_url = f"https://finance.yahoo.com/quote/{stock_symbol}.{exchange_code}"
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract financial data
+        financial_data = {}
+        try:
+            stock_price = soup.find("fin-streamer", {"data-field": "regularMarketPrice"}).text
+            financial_data["Stock Price"] = stock_price
+        except Exception as e:
+            logging.warning(f"World Stock Exchanges: Stock price not found for {stock_symbol} on {exchange_code}: {e}")
+
+        return {"financial_data": financial_data, "news": []}
+    except Exception as e:
+        logging.error(f"Error scraping world stock exchanges for {stock_symbol} on {exchange_code}: {e}")
+        return None
+
+def aggregate_data(stock_symbol, exchange_code=None):
+    """
+    Aggregates financial data and news from multiple sources, including specific stock exchanges.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "NVDA" for NVIDIA).
+        exchange_code (str, optional): The exchange code (e.g., "NSE", "NASDAQ"). Defaults to None.
 
     Returns:
         dict: A dictionary containing aggregated financial data and news.
@@ -739,14 +816,19 @@ def aggregate_data(company_name):
         scrape_yahoo_finance,
         scrape_alpha_vantage,
         scrape_forbes,
-        # Add more sources like Wall Street Journal, Business Daily Africa, Financial Times, etc.
     ]
+
+    # Add specific exchange scraping based on the exchange code
+    if exchange_code == "NSE":
+        sources.append(scrape_nairobi_stock_exchange)
+    elif exchange_code:
+        sources.append(lambda symbol: scrape_world_stock_exchanges(symbol, exchange_code))
 
     aggregated_data = {"financial_data": {}, "news": []}
 
     for source in sources:
         try:
-            result = source(company_name)
+            result = source(stock_symbol)
             if result:
                 aggregated_data["financial_data"].update(result.get("financial_data", {}))
                 aggregated_data["news"].extend(result.get("news", []))
@@ -755,20 +837,59 @@ def aggregate_data(company_name):
 
     return aggregated_data
 
+# Mapping of company names to stock symbols
+COMPANY_TO_SYMBOL = {
+    "NVIDIA": "NVDA",
+    "Apple": "AAPL",
+    "KCB Group": "KCB",
+    "Safaricom": "SCOM",
+    # Add more companies as needed
+}
+
+# Mapping of exchange names to exchange codes
+EXCHANGE_TO_CODE = {
+    "NASDAQ": "NASDAQ",
+    "New York Stock Exchange": "NYSE",
+    "London Stock Exchange": "LSE",
+    "Hong Kong Stock Exchange": "HKEX",
+    "Nairobi Stock Exchange": "NSE",
+    # Add more exchanges as needed
+}
+
+def resolve_company_and_exchange(company_name, exchange_name):
+    """
+    Resolves the stock symbol and exchange code based on the company name and exchange name.
+
+    Args:
+        company_name (str): The name of the company.
+        exchange_name (str): The name of the exchange.
+
+    Returns:
+        tuple: A tuple containing the stock symbol and exchange code, or (None, None) if not found.
+    """
+    stock_symbol = COMPANY_TO_SYMBOL.get(company_name)
+    exchange_code = EXCHANGE_TO_CODE.get(exchange_name)
+    if not stock_symbol:
+        logging.error(f"Company name '{company_name}' not found in the mapping.")
+    if not exchange_code:
+        logging.error(f"Exchange name '{exchange_name}' not found in the mapping.")
+    return stock_symbol, exchange_code
+
 def main():
     st.title("Financial Analyzer App")
     st.write("Analyze financial data of companies.")
 
-    # Input fields for company name and website URL
-    company_name = st.text_input("Enter the company name:")
-    website_url = st.text_input("Enter the company's financial data URL:")
+    # Input fields for company name and exchange name
+    company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
+    exchange_name = st.text_input("Enter the exchange name (e.g., 'NASDAQ', 'Nairobi Stock Exchange'):")
+
 
     # File uploader for CSV, Excel, PDF, and image files
     uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, PDF, or Image):", type=["csv", "xlsx", "pdf", "png", "jpg", "jpeg"])
 
     if st.button("Analyze"):
         if not company_name and not uploaded_file:
-            st.error("Please provide either the company name and website URL or upload a file.")
+            st.error("Please provide either the company name and exchange name or upload a file.")
             return
 
         try:
@@ -814,10 +935,16 @@ def main():
                     else:
                         st.error("Failed to extract text from the image. Please ensure the image is clear and contains readable text.")
 
+            # Resolve stock symbol and exchange code
+            stock_symbol, exchange_code = resolve_company_and_exchange(company_name, exchange_name)
+            if not stock_symbol or not exchange_code:
+                st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
+                return
+
             # Handle scraping if no file is uploaded
-            if not financial_data and company_name:
-                st.info(f"Scraping financial data and news for {company_name} from multiple sources...")
-                aggregated_data = aggregate_data(company_name)
+            if not financial_data and stock_symbol:
+                st.info(f"Scraping financial data and news for {company_name} ({stock_symbol}) from {exchange_name}...")
+                aggregated_data = aggregate_data(stock_symbol, exchange_code)
                 if aggregated_data:
                     st.write("Aggregated Financial Data:")
                     st.json(aggregated_data.get("financial_data", {}))
@@ -834,7 +961,7 @@ def main():
                 st.dataframe(financial_data)
 
                 st.write("Calculated Financial Ratios:")
-                analyzer = FinancialAnalyzer(company_name=company_name, financial_data=financial_data)
+                analyzer = FinancialAnalyzer(company_name=stock_symbol, financial_data=financial_data)
                 ratios = analyzer.calculate_ratios()
                 if ratios:
                     st.json(ratios)
