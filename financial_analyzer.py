@@ -6,6 +6,61 @@ import re
 import urllib.parse
 import urllib.request
 import logging
+import time  # For rate limiting
+from urllib.robotparser import RobotFileParser  # For robots.txt compliance
+from functools import lru_cache  # For caching robots.txt
+from time import sleep  # For retry mechanism
+import argparse  # For command-line arguments
+import json  # For configuration file support
+
+# Parse command-line arguments for configuration
+parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
+parser.add_argument("--config_file", type=str, help="Path to a JSON configuration file")
+parser.add_argument("--user_agent", type=str, default="FinancialAnalyzerBot/1.0 (+https://github.com/knigh/FinancialAnalysisApp)", help="User-Agent for HTTP requests")
+parser.add_argument("--max_retries", type=int, default=3, help="Maximum number of retries for HTTP requests")
+parser.add_argument("--retry_delay", type=int, default=5, help="Initial delay (in seconds) between retries")
+args = parser.parse_args()
+
+# Load configuration from file if provided
+if args.config_file:
+    try:
+        with open(args.config_file, 'r') as config_file:
+            config = json.load(config_file)
+            if not isinstance(config, dict):
+                raise ValueError("Configuration file must contain a JSON object.")
+            
+            USER_AGENT = config.get("user_agent", args.user_agent)
+            MAX_RETRIES = config.get("max_retries", args.max_retries)
+            RETRY_DELAY = config.get("retry_delay", args.retry_delay)
+            ROBOTS_TIMEOUT = config.get("robots_timeout", 5)  # Timeout for robots.txt fetching
+            SCRAPING_TIMEOUT = config.get("scraping_timeout", 10)  # Timeout for main scraping requests
+            if not isinstance(MAX_RETRIES, int) or MAX_RETRIES <= 0:
+                raise ValueError("max_retries must be a positive integer.")
+            if not isinstance(RETRY_DELAY, (int, float)) or RETRY_DELAY < 0:
+                raise ValueError("retry_delay must be a non-negative number.")
+            if not isinstance(ROBOTS_TIMEOUT, (int, float)) or ROBOTS_TIMEOUT <= 0:
+                raise ValueError("robots_timeout must be a positive number.")
+            if not isinstance(SCRAPING_TIMEOUT, (int, float)) or SCRAPING_TIMEOUT <= 0:
+                raise ValueError("scraping_timeout must be a positive number.")
+    except Exception as e:
+        logging.warning(f"Failed to load or validate configuration file {args.config_file}: {e}")
+        USER_AGENT = args.user_agent
+        MAX_RETRIES = args.max_retries
+        RETRY_DELAY = args.retry_delay
+        ROBOTS_TIMEOUT = 5
+        SCRAPING_TIMEOUT = 10
+else:
+    USER_AGENT = args.user_agent
+    MAX_RETRIES = args.max_retries
+    RETRY_DELAY = args.retry_delay
+    ROBOTS_TIMEOUT = 5
+    SCRAPING_TIMEOUT = 10
+
+# Validate command-line arguments
+if MAX_RETRIES <= 0:
+    raise ValueError("MAX_RETRIES must be a positive integer.")
+if RETRY_DELAY < 0:
+    raise ValueError("RETRY_DELAY must be a non-negative number.")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,6 +86,28 @@ class FinancialAnalyzer:
         if website_url and financial_data is None:
             self.financial_data = self.scrape_financial_data()
 
+    @lru_cache(maxsize=10)
+    def fetch_robots_txt(self, robots_url, timeout=ROBOTS_TIMEOUT):
+        """
+        Fetches and parses the robots.txt file, with caching for performance.
+
+        Args:
+            robots_url (str): The URL of the robots.txt file.
+            timeout (int): Timeout for fetching the robots.txt file.
+
+        Returns:
+            RobotFileParser: A parsed RobotFileParser object.
+        """
+        rp = RobotFileParser()
+        rp.set_url(robots_url)
+        try:
+            rp.read()
+            return rp
+        except Exception as e:
+            st.warning(f"Could not fetch or parse robots.txt at {robots_url} (timeout={timeout}): {e}")
+            logging.warning(f"Could not fetch or parse robots.txt at {robots_url} (timeout={timeout}): {e}")
+            return None
+
     def scrape_financial_data(self):
         """
         Scrapes financial data from the company's website.
@@ -43,48 +120,101 @@ class FinancialAnalyzer:
             logging.error("Website URL not provided.")
             return None
 
+        # Check robots.txt compliance
+        parsed_url = urllib.parse.urlparse(self.website_url)
+        robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
         try:
-            response = requests.get(self.website_url, timeout=10)  # Add timeout
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-
-            tables = soup.find_all("table")
-            for table in tables:
-                if "balance sheet" in table.text.lower() or "income statement" in table.text.lower() or "cash flow" in table.text.lower():
-                    data = []
-                    rows = table.find_all("tr")
-                    for row in rows:
-                        cols = row.find_all(["td", "th"])  # Handle both td and th
-                        cols = [ele.text.strip() for ele in cols]
-                        data.append(cols)
-
-                    df = pd.DataFrame(data)
-
-                    if not df.empty:
-                        df.columns = df.iloc[0]
-                        df = df[1:]
-                        df = df.dropna(axis=1, how='all')
-                        df = df.dropna(axis=0, how='all')
-
-                        for col in df.columns:
-                            try:
-                                df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float) #raw string
-                            except (ValueError, AttributeError):
-                                pass
-                        return df
-
-            st.error("Financial data table not found.")
-            logging.error("Financial data table not found.")
-            return None
-
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error during scraping: {e}")
-            logging.error(f"Error during scraping: {e}")
-            return None
+            rp = self.fetch_robots_txt(robots_url, timeout=ROBOTS_TIMEOUT)
+            if rp and not rp.can_fetch("*", self.website_url):
+                st.error(f"Scraping is not allowed by robots.txt at {robots_url} for URL: {self.website_url}")
+                logging.error(f"Scraping is not allowed by robots.txt at {robots_url} for URL: {self.website_url}")
+                return None
         except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
-            logging.error(f"An unexpected error occurred: {e}")
-            return None
+            st.warning(f"Error while parsing robots.txt at {robots_url} for URL: {self.website_url}: {e}")
+            logging.warning(f"Error while parsing robots.txt at {robots_url} for URL: {self.website_url}: {e}")
+
+        retries = 0
+        delay = RETRY_DELAY
+        while retries < MAX_RETRIES:
+            try:
+                # Dynamic rate limiting: Adjust delay based on response time
+                start_time = time.time()
+                headers = {"User-Agent": USER_AGENT}
+                response = requests.get(self.website_url, headers=headers, timeout=SCRAPING_TIMEOUT)
+                response.raise_for_status()
+                elapsed_time = time.time() - start_time
+                time.sleep(max(1, elapsed_time))  # Ensure at least 1-second delay
+
+                soup = BeautifulSoup(response.content, "html.parser")
+
+                tables = soup.find_all("table")
+                for table in tables:
+                    if "balance sheet" in table.text.lower() or "income statement" in table.text.lower() or "cash flow" in table.text.lower():
+                        data = []
+                        rows = table.find_all("tr")
+                        for row in rows:
+                            cols = row.find_all(["td", "th"])  # Handle both td and th
+                            cols = [ele.text.strip() for ele in cols]
+                            data.append(cols)
+
+                        df = pd.DataFrame(data)
+
+                        if not df.empty:
+                            # Ensure the first row is suitable for headers
+                            if df.iloc[0].isnull().any():
+                                st.error(f"Table headers are missing or invalid in URL: {self.website_url}")
+                                logging.error(f"Table headers are missing or invalid in URL: {self.website_url}")
+                                return None
+
+                            df.columns = df.iloc[0]
+                            df = df[1:]
+                            df = df.dropna(axis=1, how='all')
+                            df = df.dropna(axis=0, how='all')
+
+                            for col in df.columns:
+                                try:
+                                    df[col] = pd.to_numeric(df[col].str.replace(r'[$,()]', '', regex=True), errors='coerce')
+                                except (ValueError, AttributeError):
+                                    pass
+
+                            # Validate for negative values
+                            if (df.select_dtypes(include=['number']) < 0).any().any():
+                                st.warning(f"Negative values detected in financial data from URL: {self.website_url}")
+                                logging.warning(f"Negative values detected in financial data from URL: {self.website_url}")
+
+                            return df
+
+                st.error(f"Financial data table not found in URL: {self.website_url}")
+                logging.error(f"Financial data table not found in URL: {self.website_url}")
+                return None
+
+            except requests.exceptions.Timeout:
+                st.error(f"Request to {self.website_url} timed out.")
+                logging.error(f"Request to {self.website_url} timed out.")
+                return None
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    retries += 1
+                    st.warning(f"Too many requests to {self.website_url}. Retrying in {delay} seconds... (Attempt {retries}/{MAX_RETRIES})")
+                    logging.warning(f"HTTP 429 Too Many Requests for URL {self.website_url}: Retrying in {delay} seconds... (Attempt {retries}/{MAX_RETRIES})")
+                    sleep(delay)
+                    delay *= 2  # Exponential backoff
+                else:
+                    st.error(f"HTTP error occurred while accessing {self.website_url}: {e}")
+                    logging.error(f"HTTP error occurred while accessing {self.website_url}: {e}")
+                    return None
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error during scraping from URL {self.website_url}: {e}")
+                logging.error(f"Error during scraping from URL {self.website_url}: {e}")
+                return None
+            except Exception as e:
+                st.error(f"An unexpected error occurred while scraping from URL {self.website_url}: {e}")
+                logging.error(f"An unexpected error occurred while scraping from URL {self.website_url}: {e}")
+                return None
+
+        st.error(f"Failed to scrape data from {self.website_url} after {MAX_RETRIES} retries.")
+        logging.error(f"Failed to scrape data from {self.website_url} after {MAX_RETRIES} retries.")
+        return None
 
     def calculate_ratios(self):
         """
@@ -101,36 +231,56 @@ class FinancialAnalyzer:
         try:
             data = self.financial_data
 
-            revenue_col = next((col for col in data.columns if re.search(r'revenue|sales', col, re.IGNORECASE)), None)
-            net_income_col = next((col for col in data.columns if re.search(r'net income|profit', col, re.IGNORECASE)), None)
-            total_assets_col = next((col for col in data.columns if re.search(r'total assets', col, re.IGNORECASE)), None)
-            total_liabilities_col = next((col for col in data.columns if re.search(r'total liabilities', col, re.IGNORECASE)), None)
-            current_assets_col = next((col for col in data.columns if re.search(r'current assets', col, re.IGNORECASE)), None)
-            current_liabilities_col = next((col for col in data.columns if re.search(r'current liabilities', col, re.IGNORECASE)), None)
-            total_equity_col = next((col for col in data.columns if re.search(r'total equity', col, re.IGNORECASE)), None)
-            cash_col = next((col for col in data.columns if re.search(r'cash', col, re.IGNORECASE)), None)
-            inventory_col = next((col for col in data.columns if re.search(r'inventory', col, re.IGNORECASE)), None)
-            cogs_col = next((col for col in data.columns if re.search(r'cost of goods sold|cogs', col, re.IGNORECASE)), None)
+            def find_column(pattern):
+                return next((col for col in data.columns if re.search(pattern, col, re.IGNORECASE)), None)
+
+            revenue_col = find_column(r'revenue|sales')
+            net_income_col = find_column(r'net income|profit')
+            total_assets_col = find_column(r'total assets')
+            total_liabilities_col = find_column(r'total liabilities')
+            current_assets_col = find_column(r'current assets')
+            current_liabilities_col = find_column(r'current liabilities')
+            total_equity_col = find_column(r'total equity')
+            cash_col = find_column(r'cash')
+            inventory_col = find_column(r'inventory')
+            cogs_col = find_column(r'cost of goods sold|cogs')
 
             ratios = {}
 
             if revenue_col and net_income_col:
-                ratios["Profit Margin"] = data[net_income_col].iloc[-1] / data[revenue_col].iloc[-1] if data[revenue_col].iloc[-1] != 0 else None
+                revenue = pd.to_numeric(data[revenue_col], errors='coerce').iloc[-1]
+                net_income = pd.to_numeric(data[net_income_col], errors='coerce').iloc[-1]
+                ratios["Profit Margin"] = net_income / revenue if revenue != 0 else None
 
             if total_assets_col and total_liabilities_col:
-                ratios["Debt-to-Asset Ratio"] = data[total_liabilities_col].iloc[-1] / data[total_assets_col].iloc[-1] if data[total_assets_col].iloc[-1] != 0 else None
+                total_assets = pd.to_numeric(data[total_assets_col], errors='coerce').iloc[-1]
+                total_liabilities = pd.to_numeric(data[total_liabilities_col], errors='coerce').iloc[-1]
+                ratios["Debt-to-Asset Ratio"] = total_liabilities / total_assets if total_assets != 0 else None
 
             if current_assets_col and current_liabilities_col:
-                ratios["Current Ratio"] = data[current_assets_col].iloc[-1] / data[current_liabilities_col].iloc[-1] if data[current_liabilities_col].iloc[-1] != 0 else None
+                current_assets = pd.to_numeric(data[current_assets_col], errors='coerce').iloc[-1]
+                current_liabilities = pd.to_numeric(data[current_liabilities_col], errors='coerce').iloc[-1]
+                ratios["Current Ratio"] = current_assets / current_liabilities if current_liabilities != 0 else None
 
             if total_equity_col and total_liabilities_col:
-                ratios["Debt-to-Equity Ratio"] = data[total_liabilities_col].iloc[-1] / data[total_equity_col].iloc[-1] if data[total_equity_col].iloc[-1] != 0 else None
+                total_equity = pd.to_numeric(data[total_equity_col], errors='coerce').iloc[-1]
+                ratios["Debt-to-Equity Ratio"] = total_liabilities / total_equity if total_equity != 0 else None
 
             if cash_col and current_liabilities_col:
-                ratios["Cash Ratio"] = data[cash_col].iloc[-1] / data[current_liabilities_col].iloc[-1] if data[current_liabilities_col].iloc[-1] != 0 else None
+                cash = pd.to_numeric(data[cash_col], errors='coerce').iloc[-1]
+                ratios["Cash Ratio"] = cash / current_liabilities if current_liabilities != 0 else None
 
             if inventory_col and cogs_col:
-                ratios["Inventory Turnover"] = data[cogs_col].iloc[-1] / data[inventory_col].iloc[-1] if data[inventory_col].iloc[-1] != 0 else None
+                inventory = pd.to_numeric(data[inventory_col], errors='coerce').iloc[-1]
+                cogs = pd.to_numeric(data[cogs_col], errors='coerce').iloc[-1]
+                ratios["Inventory Turnover"] = cogs / inventory if inventory != 0 else None
+
+            # Validate for negative values in key columns
+            key_columns = [revenue_col, net_income_col, total_assets_col, total_liabilities_col]
+            for col in key_columns:
+                if col and (data[col].astype(float) < 0).any():
+                    st.warning(f"Negative values detected in column '{col}' for financial ratios.")
+                    logging.warning(f"Negative values detected in column '{col}' for financial ratios.")
 
             return ratios
 
@@ -139,12 +289,12 @@ class FinancialAnalyzer:
             logging.error(f"KeyError: {e}. Required financial data columns not found.")
             return None
         except TypeError as e:
-            st.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue: {e}")
-            logging.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue: {e}")
+            st.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue.")
+            logging.error(f"TypeError: {e}. Check the type of your data. Likely a data format issue.")
             return None
         except IndexError as e:
-            st.error(f"IndexError: {e}. Check the structure of your data. Data may be missing: {e}")
-            logging.error(f"IndexError: {e}. Check the structure of your data. Data may be missing: {e}")
+            st.error(f"IndexError: {e}. Check the structure of your data. Data may be missing.")
+            logging.error(f"IndexError: {e}. Check the structure of your data. Data may be missing.")
             return None
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
