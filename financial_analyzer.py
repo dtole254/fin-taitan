@@ -348,8 +348,8 @@ def extract_unstructured_pdf_data(pdf_file):
             data = []
             lines = raw_text.split("\n")
             for line in lines:
-                # Example: Match lines with financial data patterns (e.g., "Revenue: $123,456")
-                match = re.match(r"(.+?):\s*([\d,.\(\)\$]+)", line)
+                # Match patterns like "Revenue: $123,456" or "Net Income 123,456"
+                match = re.match(r"(.+?):\s*([\d,.\(\)\$]+)", line) or re.match(r"(.+?)\s+([\d,.\(\)\$]+)", line)
                 if match:
                     key, value = match.groups()
                     data.append([key.strip(), value.strip()])
@@ -357,6 +357,14 @@ def extract_unstructured_pdf_data(pdf_file):
             if data:
                 return pd.DataFrame(data, columns=["Metric", "Value"])
             else:
+                # Attempt to extract numeric data from lines without clear patterns
+                fallback_data = []
+                for line in lines:
+                    numbers = re.findall(r"[\d,.\(\)\$]+", line)
+                    if numbers:
+                        fallback_data.append([line.strip(), " | ".join(numbers)])
+                if fallback_data:
+                    return pd.DataFrame(fallback_data, columns=["Line", "Extracted Values"])
                 return None
     except Exception as e:
         logging.error(f"Error extracting unstructured data from PDF: {e}")
@@ -409,8 +417,8 @@ def main():
 
             # Handle scraping if no file is uploaded
             if not financial_data and company_name and website_url:
-                analyzer = FinancialAnalyzer(company_name=company_name, website_url=website_url)
-                financial_data = analyzer.scrape_financial_data()
+                st.warning("Scraping is disallowed by robots.txt. Please upload a file instead.")
+                return
 
             # Display and analyze financial data
             if financial_data is not None:
