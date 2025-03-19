@@ -21,7 +21,15 @@ parser.add_argument("--max_retries", type=int, default=3, help="Maximum number o
 parser.add_argument("--retry_delay", type=int, default=5, help="Initial delay (in seconds) between retries")
 args = parser.parse_args()
 
-# Load configuration from file if provided
+# Load configuration from file if provided, or use a default configuration
+DEFAULT_CONFIG = {
+    "user_agent": "FinancialAnalyzerBot/1.0 (+https://github.com/knigh/FinancialAnalysisApp)",
+    "max_retries": 3,
+    "retry_delay": 5,
+    "robots_timeout": 5,
+    "scraping_timeout": 10
+}
+
 if args.config_file:
     try:
         with open(args.config_file, 'r') as config_file:
@@ -29,11 +37,11 @@ if args.config_file:
             if not isinstance(config, dict):
                 raise ValueError("Configuration file must contain a JSON object.")
             
-            USER_AGENT = config.get("user_agent", args.user_agent)
-            MAX_RETRIES = config.get("max_retries", args.max_retries)
-            RETRY_DELAY = config.get("retry_delay", args.retry_delay)
-            ROBOTS_TIMEOUT = config.get("robots_timeout", 5)  # Timeout for robots.txt fetching
-            SCRAPING_TIMEOUT = config.get("scraping_timeout", 10)  # Timeout for main scraping requests
+            USER_AGENT = config.get("user_agent", DEFAULT_CONFIG["user_agent"])
+            MAX_RETRIES = config.get("max_retries", DEFAULT_CONFIG["max_retries"])
+            RETRY_DELAY = config.get("retry_delay", DEFAULT_CONFIG["retry_delay"])
+            ROBOTS_TIMEOUT = config.get("robots_timeout", DEFAULT_CONFIG["robots_timeout"])
+            SCRAPING_TIMEOUT = config.get("scraping_timeout", DEFAULT_CONFIG["scraping_timeout"])
             if not isinstance(MAX_RETRIES, int) or MAX_RETRIES <= 0:
                 raise ValueError("max_retries must be a positive integer.")
             if not isinstance(RETRY_DELAY, (int, float)) or RETRY_DELAY < 0:
@@ -44,17 +52,17 @@ if args.config_file:
                 raise ValueError("scraping_timeout must be a positive number.")
     except Exception as e:
         logging.warning(f"Failed to load or validate configuration file {args.config_file}: {e}")
-        USER_AGENT = args.user_agent
-        MAX_RETRIES = args.max_retries
-        RETRY_DELAY = args.retry_delay
-        ROBOTS_TIMEOUT = 5
-        SCRAPING_TIMEOUT = 10
+        USER_AGENT = DEFAULT_CONFIG["user_agent"]
+        MAX_RETRIES = DEFAULT_CONFIG["max_retries"]
+        RETRY_DELAY = DEFAULT_CONFIG["retry_delay"]
+        ROBOTS_TIMEOUT = DEFAULT_CONFIG["robots_timeout"]
+        SCRAPING_TIMEOUT = DEFAULT_CONFIG["scraping_timeout"]
 else:
-    USER_AGENT = args.user_agent
-    MAX_RETRIES = args.max_retries
-    RETRY_DELAY = args.retry_delay
-    ROBOTS_TIMEOUT = 5
-    SCRAPING_TIMEOUT = 10
+    USER_AGENT = DEFAULT_CONFIG["user_agent"]
+    MAX_RETRIES = DEFAULT_CONFIG["max_retries"]
+    RETRY_DELAY = DEFAULT_CONFIG["retry_delay"]
+    ROBOTS_TIMEOUT = DEFAULT_CONFIG["robots_timeout"]
+    SCRAPING_TIMEOUT = DEFAULT_CONFIG["scraping_timeout"]
 
 # Validate command-line arguments
 if MAX_RETRIES <= 0:
@@ -87,17 +95,18 @@ class FinancialAnalyzer:
             self.financial_data = self.scrape_financial_data()
 
     @lru_cache(maxsize=10)
-    def fetch_robots_txt(self, robots_url, timeout=ROBOTS_TIMEOUT):
+    def fetch_robots_txt(self, robots_url, timeout=None):
         """
         Fetches and parses the robots.txt file, with caching for performance.
 
         Args:
             robots_url (str): The URL of the robots.txt file.
-            timeout (int): Timeout for fetching the robots.txt file.
+            timeout (int): Timeout for fetching the robots.txt file. Defaults to ROBOTS_TIMEOUT.
 
         Returns:
             RobotFileParser: A parsed RobotFileParser object.
         """
+        timeout = timeout or ROBOTS_TIMEOUT
         rp = RobotFileParser()
         rp.set_url(robots_url)
         try:
