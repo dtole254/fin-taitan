@@ -870,8 +870,12 @@ def resolve_company_and_exchange(company_name, exchange_name):
     Returns:
         tuple: A tuple containing the stock symbol and exchange code, or (None, None) if not found.
     """
-    stock_symbol = COMPANY_TO_SYMBOL.get(company_name)
-    exchange_code = EXCHANGE_TO_CODE.get(exchange_name)
+    company_name = company_name.strip().lower()  # Normalize case and whitespace
+    exchange_name = exchange_name.strip().lower()  # Normalize case and whitespace
+
+    stock_symbol = next((symbol for name, symbol in COMPANY_TO_SYMBOL.items() if name.lower() == company_name), None)
+    exchange_code = next((code for name, code in EXCHANGE_TO_CODE.items() if name.lower() == exchange_name), None)
+
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
     if not exchange_code:
@@ -882,17 +886,17 @@ def main():
     st.title("Financial Analyzer App")
     st.write("Analyze financial data of companies.")
 
-    # Input fields for company name and exchange name
+    # Input fields for company name, exchange name, and company URL
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
     exchange_name = st.text_input("Enter the exchange name (e.g., 'NASDAQ', 'Nairobi Stock Exchange'):")
-
+    company_url = st.text_input("Enter the company's financial data URL (optional):")
 
     # File uploader for CSV, Excel, PDF, and image files
     uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, PDF, or Image):", type=["csv", "xlsx", "pdf", "png", "jpg", "jpeg"])
 
     if st.button("Analyze"):
-        if not company_name and not uploaded_file:
-            st.error("Please provide either the company name and exchange name or upload a file.")
+        if not company_name and not uploaded_file and not company_url:
+            st.error("Please provide either the company name, exchange name, company URL, or upload a file.")
             return
 
         try:
@@ -940,27 +944,37 @@ def main():
 
             # Resolve stock symbol and exchange code
             stock_symbol, exchange_code = resolve_company_and_exchange(company_name, exchange_name)
-            if not stock_symbol or not exchange_code:
+            if not stock_symbol and not company_url:
                 st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
                 return
 
             # Handle scraping if no file is uploaded
-            if not financial_data and stock_symbol:
-                st.info(f"Scraping financial data and news for {company_name} ({stock_symbol}) from {exchange_name}...")
-                aggregated_data = aggregate_data(stock_symbol, exchange_code)
-                if aggregated_data:
-                    st.write("Aggregated Financial Data:")
-                    st.json(aggregated_data.get("financial_data", {}))
-
-                    st.write("Relevant News:")
-                    news_items = aggregated_data.get("news", [])
-                    if news_items:
-                        for news_item in news_items:
-                            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+            if not financial_data:
+                if company_url:
+                    st.info(f"Scraping financial data from the provided URL: {company_url}...")
+                    analyzer = FinancialAnalyzer(company_name=company_name, website_url=company_url)
+                    financial_data = analyzer.scrape_financial_data()
+                    if financial_data is not None:
+                        st.write("Scraped Financial Data:")
+                        st.dataframe(financial_data)
                     else:
-                        st.info("No relevant news found for this company.")
-                else:
-                    st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
+                        st.error("Failed to scrape financial data from the provided URL.")
+                elif stock_symbol:
+                    st.info(f"Scraping financial data and news for {company_name} ({stock_symbol}) from {exchange_name}...")
+                    aggregated_data = aggregate_data(stock_symbol, exchange_code)
+                    if aggregated_data:
+                        st.write("Aggregated Financial Data:")
+                        st.json(aggregated_data.get("financial_data", {}))
+
+                        st.write("Relevant News:")
+                        news_items = aggregated_data.get("news", [])
+                        if news_items:
+                            for news_item in news_items:
+                                st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+                        else:
+                            st.info("No relevant news found for this company.")
+                    else:
+                        st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
 
             # Display and analyze financial data
             if financial_data is not None and not financial_data.empty:
