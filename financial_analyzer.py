@@ -569,12 +569,17 @@ def scrape_google_financial_data(company_name):
         # Attempt to extract market cap or other financial metrics
         financial_metrics = soup.find_all("div", class_="BNeawe s3v9rd AP7Wnd")
         for metric in financial_metrics:
-            if "Market cap" in metric.text:
-                financial_data["Market Cap"] = metric.text.split(":")[-1].strip()
-            elif "Revenue" in metric.text:
-                financial_data["Revenue"] = metric.text.split(":")[-1].strip()
-            elif "Net income" in metric.text:
-                financial_data["Net Income"] = metric.text.split(":")[-1].strip()
+            text = metric.text.lower()
+            if "market cap" in text:
+                financial_data["Market Cap"] = text.split(":")[-1].strip()
+            elif "revenue" in text:
+                financial_data["Revenue"] = text.split(":")[-1].strip()
+            elif "net income" in text:
+                financial_data["Net Income"] = text.split(":")[-1].strip()
+
+        # Log if no financial data is found
+        if not financial_data:
+            logging.warning(f"No financial data found for {company_name} on Google.")
 
         # Extract relevant news
         news = []
@@ -584,10 +589,19 @@ def scrape_google_financial_data(company_name):
             link = item.find_parent("a")["href"]
             news.append({"title": title, "link": f"https://www.google.com{link}"})
 
+        # Log if no news is found
+        if not news:
+            logging.warning(f"No news found for {company_name} on Google.")
+
         # Return the extracted data
         return {"financial_data": financial_data, "news": news}
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Network error while scraping Google for {company_name}: {e}")
+        st.error("Network error occurred while fetching data. Please check your internet connection.")
+        return None
     except Exception as e:
         logging.error(f"Error scraping Google financial data for {company_name}: {e}")
+        st.error("An unexpected error occurred while fetching data. Please try again later.")
         return None
 
 def main():
