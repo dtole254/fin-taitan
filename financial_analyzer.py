@@ -558,13 +558,23 @@ def scrape_google_financial_data(company_name):
 
         # Extract financial data (e.g., stock price, market cap, etc.)
         financial_data = {}
+
+        # Attempt to extract stock price
         stock_price = soup.find("div", class_="BNeawe iBp4i AP7Wnd")
         if stock_price:
             financial_data["Stock Price"] = stock_price.text
+        else:
+            logging.warning("Stock price not found on Google search results.")
 
-        market_cap = soup.find("div", text=re.compile(r"Market cap", re.IGNORECASE))
-        if market_cap and market_cap.find_next_sibling("div"):
-            financial_data["Market Cap"] = market_cap.find_next_sibling("div").text
+        # Attempt to extract market cap or other financial metrics
+        financial_metrics = soup.find_all("div", class_="BNeawe s3v9rd AP7Wnd")
+        for metric in financial_metrics:
+            if "Market cap" in metric.text:
+                financial_data["Market Cap"] = metric.text.split(":")[-1].strip()
+            elif "Revenue" in metric.text:
+                financial_data["Revenue"] = metric.text.split(":")[-1].strip()
+            elif "Net income" in metric.text:
+                financial_data["Net Income"] = metric.text.split(":")[-1].strip()
 
         # Extract relevant news
         news = []
@@ -574,6 +584,7 @@ def scrape_google_financial_data(company_name):
             link = item.find_parent("a")["href"]
             news.append({"title": title, "link": f"https://www.google.com{link}"})
 
+        # Return the extracted data
         return {"financial_data": financial_data, "news": news}
     except Exception as e:
         logging.error(f"Error scraping Google financial data for {company_name}: {e}")
