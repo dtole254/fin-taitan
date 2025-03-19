@@ -12,6 +12,7 @@ from functools import lru_cache  # For caching robots.txt
 from time import sleep  # For retry mechanism
 import argparse  # For command-line arguments
 import json  # For configuration file support
+import PyPDF2  # For extracting text from PDF files
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -331,27 +332,51 @@ def main():
     company_name = st.text_input("Enter the company name:")
     website_url = st.text_input("Enter the company's financial data URL:")
 
+    # File uploader for CSV, Excel, and PDF files
+    uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, or PDF):", type=["csv", "xlsx", "pdf"])
+
     if st.button("Analyze"):
-        if not company_name or not website_url:
-            st.error("Please provide both the company name and website URL.")
+        if not company_name and not uploaded_file:
+            st.error("Please provide either the company name and website URL or upload a file.")
             return
 
         try:
-            analyzer = FinancialAnalyzer(company_name=company_name, website_url=website_url)
-            financial_data = analyzer.scrape_financial_data()
+            financial_data = None
 
+            # Handle uploaded files
+            if uploaded_file:
+                if uploaded_file.name.endswith(".csv"):
+                    financial_data = pd.read_csv(uploaded_file)
+                elif uploaded_file.name.endswith(".xlsx"):
+                    financial_data = pd.read_excel(uploaded_file)
+                elif uploaded_file.name.endswith(".pdf"):
+                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                    pdf_text = ""
+                    for page in pdf_reader.pages:
+                        pdf_text += page.extract_text()
+                    st.write("Extracted Text from PDF:")
+                    st.text(pdf_text)
+                    st.warning("PDF parsing is limited to text extraction. Please ensure the data is structured.")
+
+            # Handle scraping if no file is uploaded
+            if not financial_data and company_name and website_url:
+                analyzer = FinancialAnalyzer(company_name=company_name, website_url=website_url)
+                financial_data = analyzer.scrape_financial_data()
+
+            # Display and analyze financial data
             if financial_data is not None:
-                st.write("Scraped Financial Data:")
+                st.write("Financial Data:")
                 st.dataframe(financial_data)
 
                 st.write("Calculated Financial Ratios:")
+                analyzer = FinancialAnalyzer(company_name=company_name, financial_data=financial_data)
                 ratios = analyzer.calculate_ratios()
                 if ratios:
                     st.json(ratios)
                 else:
                     st.warning("Could not calculate financial ratios. Check the data format.")
             else:
-                st.error("Failed to scrape financial data. Check the URL or website structure.")
+                st.error("Failed to process financial data. Check the file or URL.")
 
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
