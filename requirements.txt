@@ -6,3 +6,4 @@ PyPDF2
 pdfplumber
 pytesseract
 pillow
+openpyxl
