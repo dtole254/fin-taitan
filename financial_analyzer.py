@@ -231,7 +231,7 @@ class FinancialAnalyzer:
 
     def calculate_ratios(self):
         """
-        Calculates financial ratios based on the scraped data.
+        Calculates financial ratios based on the scraped or uploaded data.
 
         Returns:
             dict: A dictionary containing the calculated ratios, or None if an error occurs.
@@ -247,6 +247,7 @@ class FinancialAnalyzer:
             def find_column(pattern):
                 return next((col for col in data.columns if re.search(pattern, col, re.IGNORECASE)), None)
 
+            # Identify required columns
             revenue_col = find_column(r'revenue|sales')
             net_income_col = find_column(r'net income|profit')
             total_assets_col = find_column(r'total assets')
@@ -258,6 +259,35 @@ class FinancialAnalyzer:
             inventory_col = find_column(r'inventory')
             cogs_col = find_column(r'cost of goods sold|cogs')
 
+            # Check for missing columns
+            missing_columns = []
+            if not revenue_col:
+                missing_columns.append("Revenue")
+            if not net_income_col:
+                missing_columns.append("Net Income")
+            if not total_assets_col:
+                missing_columns.append("Total Assets")
+            if not total_liabilities_col:
+                missing_columns.append("Total Liabilities")
+            if not current_assets_col:
+                missing_columns.append("Current Assets")
+            if not current_liabilities_col:
+                missing_columns.append("Current Liabilities")
+            if not total_equity_col:
+                missing_columns.append("Total Equity")
+            if not cash_col:
+                missing_columns.append("Cash")
+            if not inventory_col:
+                missing_columns.append("Inventory")
+            if not cogs_col:
+                missing_columns.append("Cost of Goods Sold (COGS)")
+
+            if missing_columns:
+                st.error(f"The following required columns are missing: {', '.join(missing_columns)}")
+                logging.error(f"The following required columns are missing: {', '.join(missing_columns)}")
+                return None
+
+            # Calculate financial ratios
             ratios = {}
 
             if revenue_col and net_income_col:
