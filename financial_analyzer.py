@@ -16,6 +16,11 @@ import PyPDF2  # For extracting text from PDF files
 import pdfplumber  # For extracting tables from PDF files
 from PIL import Image  # For image processing
 import pytesseract  # For OCR (Optical Character Recognition)
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -538,7 +543,7 @@ def process_extracted_text_to_dataframe(text):
 
 def scrape_google_financial_data(company_name):
     """
-    Scrapes financial data and news from Google for the specified company.
+    Scrapes financial data and news from Google for the specified company using Selenium.
 
     Args:
         company_name (str): The name of the company.
@@ -547,58 +552,55 @@ def scrape_google_financial_data(company_name):
         dict: A dictionary containing financial data and relevant news.
     """
     try:
+        # Set up Selenium WebDriver
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")  # Run in headless mode
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+        # Navigate to Google search
         base_url = "https://www.google.com/search"
-        headers = {"User-Agent": USER_AGENT}
-        params = {"q": f"{company_name} financial data", "hl": "en"}
+        query = f"{company_name} financial data"
+        driver.get(f"{base_url}?q={query}")
 
-        # Fetch financial data
-        response = requests.get(base_url, headers=headers, params=params)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Extract financial data (e.g., stock price, market cap, etc.)
+        # Extract financial data
         financial_data = {}
-
-        # Attempt to extract stock price
-        stock_price = soup.find("div", class_="BNeawe iBp4i AP7Wnd")
-        if stock_price:
-            financial_data["Stock Price"] = stock_price.text
-        else:
+        try:
+            stock_price = driver.find_element(By.CLASS_NAME, "BNeawe.iBp4i.AP7Wnd").text
+            financial_data["Stock Price"] = stock_price
+        except Exception:
             logging.warning("Stock price not found on Google search results.")
 
-        # Attempt to extract market cap or other financial metrics
-        financial_metrics = soup.find_all("div", class_="BNeawe s3v9rd AP7Wnd")
-        for metric in financial_metrics:
-            text = metric.text.lower()
-            if "market cap" in text:
-                financial_data["Market Cap"] = text.split(":")[-1].strip()
-            elif "revenue" in text:
-                financial_data["Revenue"] = text.split(":")[-1].strip()
-            elif "net income" in text:
-                financial_data["Net Income"] = text.split(":")[-1].strip()
-
-        # Log if no financial data is found
-        if not financial_data:
-            logging.warning(f"No financial data found for {company_name} on Google.")
+        try:
+            metrics = driver.find_elements(By.CLASS_NAME, "BNeawe.s3v9rd.AP7Wnd")
+            for metric in metrics:
+                text = metric.text.lower()
+                if "market cap" in text:
+                    financial_data["Market Cap"] = text.split(":")[-1].strip()
+                elif "revenue" in text:
+                    financial_data["Revenue"] = text.split(":")[-1].strip()
+                elif "net income" in text:
+                    financial_data["Net Income"] = text.split(":")[-1].strip()
+        except Exception:
+            logging.warning("Financial metrics not found on Google search results.")
 
         # Extract relevant news
         news = []
-        news_items = soup.find_all("div", class_="BNeawe vvjwJb AP7Wnd")
-        for item in news_items:
-            title = item.text
-            link = item.find_parent("a")["href"]
-            news.append({"title": title, "link": f"https://www.google.com{link}"})
+        try:
+            news_items = driver.find_elements(By.CLASS_NAME, "BNeawe.vvjwJb.AP7Wnd")
+            for item in news_items:
+                title = item.text
+                link = item.find_element(By.XPATH, "..").get_attribute("href")
+                news.append({"title": title, "link": link})
+        except Exception:
+            logging.warning("No news found for the company on Google.")
 
-        # Log if no news is found
-        if not news:
-            logging.warning(f"No news found for {company_name} on Google.")
+        driver.quit()
 
         # Return the extracted data
         return {"financial_data": financial_data, "news": news}
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Network error while scraping Google for {company_name}: {e}")
-        st.error("Network error occurred while fetching data. Please check your internet connection.")
-        return None
     except Exception as e:
         logging.error(f"Error scraping Google financial data for {company_name}: {e}")
         st.error("An unexpected error occurred while fetching data. Please try again later.")
