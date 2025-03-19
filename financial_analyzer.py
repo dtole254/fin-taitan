@@ -371,9 +371,10 @@ def extract_unstructured_pdf_data(pdf_file):
         with pdfplumber.open(pdf_file) as pdf:
             raw_text = ""
             for page in pdf.pages:
-                raw_text += page.extract_text()
+                raw_text += page.extract_text() or ""
 
             if not raw_text.strip():
+                st.warning("The PDF contains no readable text. Please ensure the file is not scanned or corrupted.")
                 return None
 
             # Process raw text to extract financial data using regular expressions
@@ -385,21 +386,20 @@ def extract_unstructured_pdf_data(pdf_file):
                 if match:
                     key, value = match.groups()
                     data.append([key.strip(), value.strip()])
-
-            if data:
-                return pd.DataFrame(data, columns=["Metric", "Value"])
-            else:
-                # Attempt to extract numeric data from lines without clear patterns
-                fallback_data = []
-                for line in lines:
+                else:
+                    # Fallback: Extract numeric values from unstructured lines
                     numbers = re.findall(r"[\d,.\(\)\$]+", line)
                     if numbers:
-                        fallback_data.append([line.strip(), " | ".join(numbers)])
-                if fallback_data:
-                    return pd.DataFrame(fallback_data, columns=["Line", "Extracted Values"])
+                        data.append([line.strip(), " | ".join(numbers)])
+
+            if data:
+                return pd.DataFrame(data, columns=["Description", "Values"])
+            else:
+                st.warning("No recognizable financial data could be extracted from the PDF.")
                 return None
     except Exception as e:
         logging.error(f"Error extracting unstructured data from PDF: {e}")
+        st.error(f"An error occurred while processing the PDF: {e}")
         return None
 
 def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
@@ -422,8 +422,9 @@ def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
             for page in pdf.pages:
                 extracted_tables = page.extract_tables()
                 for table in extracted_tables:
-                    tables.append(pd.DataFrame(table))
-                raw_text += page.extract_text()
+                    if table:  # Ensure the table is not empty
+                        tables.append(pd.DataFrame(table))
+                raw_text += page.extract_text() or ""
 
             # If tables are found, save them to CSV
             if tables:
@@ -456,6 +457,7 @@ def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
             return None
     except Exception as e:
         logging.error(f"Error converting PDF to CSV: {e}")
+        st.error(f"An error occurred while processing the PDF: {e}")
         return None
 
 def extract_text_from_image(image_file):
