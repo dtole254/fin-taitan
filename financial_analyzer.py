@@ -565,13 +565,16 @@ def scrape_google_financial_data(company_name):
         query = f"{company_name} financial data"
         driver.get(f"{base_url}?q={query}")
 
+        # Wait for the page to load
+        time.sleep(3)  # Adjust this delay if necessary for slower connections
+
         # Extract financial data
         financial_data = {}
         try:
             stock_price = driver.find_element(By.CLASS_NAME, "BNeawe.iBp4i.AP7Wnd").text
             financial_data["Stock Price"] = stock_price
-        except Exception:
-            logging.warning("Stock price not found on Google search results.")
+        except Exception as e:
+            logging.warning(f"Stock price not found: {e}")
 
         try:
             metrics = driver.find_elements(By.CLASS_NAME, "BNeawe.s3v9rd.AP7Wnd")
@@ -583,8 +586,8 @@ def scrape_google_financial_data(company_name):
                     financial_data["Revenue"] = text.split(":")[-1].strip()
                 elif "net income" in text:
                     financial_data["Net Income"] = text.split(":")[-1].strip()
-        except Exception:
-            logging.warning("Financial metrics not found on Google search results.")
+        except Exception as e:
+            logging.warning(f"Financial metrics not found: {e}")
 
         # Extract relevant news
         news = []
@@ -594,10 +597,14 @@ def scrape_google_financial_data(company_name):
                 title = item.text
                 link = item.find_element(By.XPATH, "..").get_attribute("href")
                 news.append({"title": title, "link": link})
-        except Exception:
-            logging.warning("No news found for the company on Google.")
+        except Exception as e:
+            logging.warning(f"News not found: {e}")
 
         driver.quit()
+
+        # Log if no data is found
+        if not financial_data and not news:
+            logging.warning(f"No financial data or news found for {company_name}.")
 
         # Return the extracted data
         return {"financial_data": financial_data, "news": news}
@@ -605,6 +612,148 @@ def scrape_google_financial_data(company_name):
         logging.error(f"Error scraping Google financial data for {company_name}: {e}")
         st.error("An unexpected error occurred while fetching data. Please try again later.")
         return None
+
+def scrape_yahoo_finance(company_name):
+    """
+    Scrapes financial data and news from Yahoo Finance for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing financial data and relevant news.
+    """
+    try:
+        base_url = f"https://finance.yahoo.com/quote/{company_name}"
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract financial data
+        financial_data = {}
+        try:
+            stock_price = soup.find("fin-streamer", {"data-field": "regularMarketPrice"}).text
+            financial_data["Stock Price"] = stock_price
+        except Exception as e:
+            logging.warning(f"Yahoo Finance: Stock price not found: {e}")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("li", class_="js-stream-content")
+            for item in news_items:
+                title = item.find("a").text
+                link = f"https://finance.yahoo.com{item.find('a')['href']}"
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"Yahoo Finance: News not found: {e}")
+
+        return {"financial_data": financial_data, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping Yahoo Finance for {company_name}: {e}")
+        return None
+
+def scrape_alpha_vantage(company_name, api_key="YOUR_ALPHA_VANTAGE_API_KEY"):
+    """
+    Fetches financial data from Alpha Vantage for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+        api_key (str): The API key for Alpha Vantage.
+
+    Returns:
+        dict: A dictionary containing financial data.
+    """
+    try:
+        base_url = "https://www.alphavantage.co/query"
+        params = {
+            "function": "OVERVIEW",
+            "symbol": company_name,
+            "apikey": api_key
+        }
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        if "Symbol" not in data:
+            logging.warning(f"Alpha Vantage: No data found for {company_name}.")
+            return None
+
+        financial_data = {
+            "Market Cap": data.get("MarketCapitalization"),
+            "Revenue": data.get("RevenueTTM"),
+            "Net Income": data.get("NetIncomeTTM"),
+            "PE Ratio": data.get("PERatio"),
+        }
+        return {"financial_data": financial_data, "news": []}
+    except Exception as e:
+        logging.error(f"Error fetching data from Alpha Vantage for {company_name}: {e}")
+        return None
+
+def scrape_forbes(company_name):
+    """
+    Scrapes news from Forbes for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.forbes.com/search/"
+        params = {"q": company_name}
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("div", class_="stream-item__text")
+            for item in news_items:
+                title = item.find("a").text
+                link = item.find("a")["href"]
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"Forbes: News not found: {e}")
+
+        return {"financial_data": {}, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping Forbes for {company_name}: {e}")
+        return None
+
+def aggregate_data(company_name):
+    """
+    Aggregates financial data and news from multiple sources.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing aggregated financial data and news.
+    """
+    sources = [
+        scrape_yahoo_finance,
+        scrape_alpha_vantage,
+        scrape_forbes,
+        # Add more sources like Wall Street Journal, Business Daily Africa, Financial Times, etc.
+    ]
+
+    aggregated_data = {"financial_data": {}, "news": []}
+
+    for source in sources:
+        try:
+            result = source(company_name)
+            if result:
+                aggregated_data["financial_data"].update(result.get("financial_data", {}))
+                aggregated_data["news"].extend(result.get("news", []))
+        except Exception as e:
+            logging.error(f"Error in source {source.__name__}: {e}")
+
+    return aggregated_data
 
 def main():
     st.title("Financial Analyzer App")
@@ -667,14 +816,14 @@ def main():
 
             # Handle scraping if no file is uploaded
             if not financial_data and company_name:
-                st.info(f"Scraping financial data and news for {company_name} from Google...")
-                google_data = scrape_google_financial_data(company_name)
-                if google_data:
-                    st.write("Scraped Financial Data:")
-                    st.json(google_data.get("financial_data", {}))
+                st.info(f"Scraping financial data and news for {company_name} from multiple sources...")
+                aggregated_data = aggregate_data(company_name)
+                if aggregated_data:
+                    st.write("Aggregated Financial Data:")
+                    st.json(aggregated_data.get("financial_data", {}))
 
                     st.write("Relevant News:")
-                    for news_item in google_data.get("news", []):
+                    for news_item in aggregated_data.get("news", []):
                         st.markdown(f"- [{news_item['title']}]({news_item['link']})")
                 else:
                     st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
