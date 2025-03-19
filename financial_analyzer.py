@@ -831,7 +831,10 @@ def aggregate_data(stock_symbol, exchange_code=None):
             result = source(stock_symbol)
             if result:
                 aggregated_data["financial_data"].update(result.get("financial_data", {}))
-                aggregated_data["news"].extend(result.get("news", []))
+                news_items = result.get("news", [])
+                if news_items:
+                    logging.info(f"News found from {source.__name__}: {len(news_items)} items.")
+                aggregated_data["news"].extend(news_items)
         except Exception as e:
             logging.error(f"Error in source {source.__name__}: {e}")
 
@@ -950,8 +953,12 @@ def main():
                     st.json(aggregated_data.get("financial_data", {}))
 
                     st.write("Relevant News:")
-                    for news_item in aggregated_data.get("news", []):
-                        st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+                    news_items = aggregated_data.get("news", [])
+                    if news_items:
+                        for news_item in news_items:
+                            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+                    else:
+                        st.info("No relevant news found for this company.")
                 else:
                     st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
 
