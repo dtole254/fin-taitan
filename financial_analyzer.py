@@ -6,14 +6,6 @@ import re
 import urllib.parse
 import urllib.request
 import logging
-from io import BytesIO
-
-try:
-    import PyPDF2  # Add this import for PDF handling
-    logging.info("Script has been executed successfully.")
-except ModuleNotFoundError:
-    logging.error("PyPDF2 module is not installed. Please install it using 'pip install PyPDF2'.")
-    raise
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,7 +33,7 @@ class FinancialAnalyzer:
 
     def scrape_financial_data(self):
         """
-        Scrapes financial data from the company's website, including tables and PDFs.
+        Scrapes financial data from the company's website.
 
         Returns:
             pd.DataFrame: A DataFrame containing the scraped financial data, or None if an error occurs.
@@ -56,56 +48,33 @@ class FinancialAnalyzer:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
-            # Check for tables on the webpage
             tables = soup.find_all("table")
-            if tables:
-                for table in tables:
-                    if any(keyword in table.text.lower() for keyword in ["balance sheet", "income statement", "cash flow"]):
-                        data = []
-                        rows = table.find_all("tr")
-                        for row in rows:
-                            cols = row.find_all(["td", "th"])  # Handle both td and th
-                            cols = [ele.text.strip() for ele in cols]
-                            data.append(cols)
+            for table in tables:
+                if "balance sheet" in table.text.lower() or "income statement" in table.text.lower() or "cash flow" in table.text.lower():
+                    data = []
+                    rows = table.find_all("tr")
+                    for row in rows:
+                        cols = row.find_all(["td", "th"])  # Handle both td and th
+                        cols = [ele.text.strip() for ele in cols]
+                        data.append(cols)
 
-                        df = pd.DataFrame(data)
+                    df = pd.DataFrame(data)
 
-                        if not df.empty:
-                            df.columns = df.iloc[0]
-                            df = df[1:]
-                            df = df.dropna(axis=1, how='all')
-                            df = df.dropna(axis=0, how='all')
+                    if not df.empty:
+                        df.columns = df.iloc[0]
+                        df = df[1:]
+                        df = df.dropna(axis=1, how='all')
+                        df = df.dropna(axis=0, how='all')
 
-                            for col in df.columns:
-                                try:
-                                    df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float)
-                                except (ValueError, AttributeError):
-                                    pass
-                            return df
-
-            # If no tables are found, check for PDF links
-            pdf_links = [a['href'] for a in soup.find_all('a', href=True) if a['href'].lower().endswith('.pdf')]
-            if pdf_links:
-                for pdf_link in pdf_links:
-                    pdf_url = urllib.parse.urljoin(self.website_url, pdf_link)
-                    pdf_response = requests.get(pdf_url, timeout=10)
-                    pdf_response.raise_for_status()
-
-                    # Extract text from the PDF
-                    pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_response.content))
-                    pdf_text = ""
-                    for page in pdf_reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:  # Ensure text is not None
-                            pdf_text += page_text
-
-                    # Attempt to parse financial data from the PDF text
-                    df = self.parse_pdf_text_to_dataframe(pdf_text)
-                    if df is not None:
+                        for col in df.columns:
+                            try:
+                                df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float) #raw string
+                            except (ValueError, AttributeError):
+                                pass
                         return df
 
-            st.warning("No relevant financial data found in tables or PDFs. Please verify the webpage content.")
-            logging.warning("No relevant financial data found in tables or PDFs.")
+            st.error("Financial data table not found.")
+            logging.error("Financial data table not found.")
             return None
 
         except requests.exceptions.RequestException as e:
@@ -115,45 +84,6 @@ class FinancialAnalyzer:
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
             logging.error(f"An unexpected error occurred: {e}")
-            return None
-
-    def parse_pdf_text_to_dataframe(self, pdf_text):
-        """
-        Parses financial data from extracted PDF text into a DataFrame.
-
-        Args:
-            pdf_text (str): The extracted text from the PDF.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the parsed financial data, or None if parsing fails.
-        """
-        try:
-            # Split text into lines and attempt to identify tabular data
-            lines = pdf_text.splitlines()
-            data = []
-            for line in lines:
-                # Split line into columns based on whitespace or delimiters
-                cols = re.split(r'\s{2,}|\t', line.strip())
-                if len(cols) > 1:  # Ensure it's a valid row with multiple columns
-                    data.append(cols)
-
-            if data:
-                df = pd.DataFrame(data)
-                df.columns = df.iloc[0]  # Use the first row as column headers
-                df = df[1:]  # Remove the header row from the data
-                df = df.dropna(axis=1, how='all')
-                df = df.dropna(axis=0, how='all')
-
-                for col in df.columns:
-                    try:
-                        df[col] = df[col].str.replace(r'[$,()]', '', regex=True).astype(float)
-                    except (ValueError, AttributeError):
-                        pass
-                return df
-
-            return None
-        except Exception as e:
-            logging.error(f"Failed to parse PDF text into DataFrame: {e}")
             return None
 
     def calculate_ratios(self):
@@ -233,70 +163,3 @@ class FinancialAnalyzer:
             return None
 
         analysis = {}
-
-        # Example analysis based on ratios
-        if "Profit Margin" in ratios:
-            if ratios["Profit Margin"] > 0.2:
-                analysis["Profitability"] = "High"
-            elif ratios["Profit Margin"] > 0.1:
-                analysis["Profitability"] = "Moderate"
-            else:
-                analysis["Profitability"] = "Low"
-
-        if "Debt-to-Asset Ratio" in ratios:
-            if ratios["Debt-to-Asset Ratio"] < 0.5:
-                analysis["Debt Level"] = "Low"
-            elif ratios["Debt-to-Asset Ratio"] < 0.7:
-                analysis["Debt Level"] = "Moderate"
-            else:
-                analysis["Debt Level"] = "High"
-
-        if "Current Ratio" in ratios:
-            if ratios["Current Ratio"] > 2:
-                analysis["Liquidity"] = "High"
-            elif ratios["Current Ratio"] > 1:
-                analysis["Liquidity"] = "Moderate"
-            else:
-                analysis["Liquidity"] = "Low"
-
-        return analysis
-
-def main():
-    st.title("Financial Analyzer")
-    st.sidebar.header("Input Parameters")
-
-    # Input fields for company name and website URL
-    company_name = st.sidebar.text_input("Company Name", value="Example Corp")
-    website_url = st.sidebar.text_input("Website URL", value="https://example.com/financials")
-
-    # Button to trigger analysis
-    if st.sidebar.button("Analyze"):
-        if not company_name or not website_url:
-            st.error("Please provide both the company name and website URL.")
-        else:
-            analyzer = FinancialAnalyzer(company_name, website_url)
-            financial_data = analyzer.financial_data
-
-            if financial_data is not None:
-                st.subheader("Scraped Financial Data")
-                st.dataframe(financial_data)
-
-                # Display calculated ratios
-                ratios = analyzer.calculate_ratios()
-                if ratios:
-                    st.subheader("Calculated Financial Ratios")
-                    for ratio, value in ratios.items():
-                        st.write(f"{ratio}: {value:.2f}" if value is not None else f"{ratio}: N/A")
-
-                # Display financial health analysis
-                analysis = analyzer.analyze_financial_health()
-                if analysis:
-                    st.subheader("Financial Health Analysis")
-                    for key, value in analysis.items():
-                        st.write(f"{key}: {value}")
-            else:
-                st.error("Failed to retrieve financial data. Please check the website URL.")
-
-if __name__ == "__main__":
-    main()
-````
