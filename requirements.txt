@@ -3,3 +3,4 @@ requests
 beautifulsoup4
 pandas
 PyPDF2
+pdfplumber
