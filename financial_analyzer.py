@@ -322,3 +322,40 @@ class FinancialAnalyzer:
             return None
 
         analysis = {}
+
+def main():
+    st.title("Financial Analyzer App")
+    st.write("Analyze financial data of companies.")
+
+    # Input fields for company name and website URL
+    company_name = st.text_input("Enter the company name:")
+    website_url = st.text_input("Enter the company's financial data URL:")
+
+    if st.button("Analyze"):
+        if not company_name or not website_url:
+            st.error("Please provide both the company name and website URL.")
+            return
+
+        try:
+            analyzer = FinancialAnalyzer(company_name=company_name, website_url=website_url)
+            financial_data = analyzer.scrape_financial_data()
+
+            if financial_data is not None:
+                st.write("Scraped Financial Data:")
+                st.dataframe(financial_data)
+
+                st.write("Calculated Financial Ratios:")
+                ratios = analyzer.calculate_ratios()
+                if ratios:
+                    st.json(ratios)
+                else:
+                    st.warning("Could not calculate financial ratios. Check the data format.")
+            else:
+                st.error("Failed to scrape financial data. Check the URL or website structure.")
+
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+            logging.error(f"An unexpected error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
