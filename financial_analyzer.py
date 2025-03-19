@@ -370,6 +370,34 @@ def extract_unstructured_pdf_data(pdf_file):
         logging.error(f"Error extracting unstructured data from PDF: {e}")
         return None
 
+def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
+    """
+    Converts a PDF file into a CSV file by extracting tables.
+
+    Args:
+        pdf_file: The uploaded PDF file.
+        output_csv_path (str): The path to save the generated CSV file.
+
+    Returns:
+        str: The path to the generated CSV file, or None if no tables were found.
+    """
+    try:
+        with pdfplumber.open(pdf_file) as pdf:
+            tables = []
+            for page in pdf.pages:
+                extracted_tables = page.extract_tables()
+                for table in extracted_tables:
+                    tables.append(pd.DataFrame(table))
+            if tables:
+                combined_data = pd.concat(tables, ignore_index=True)
+                combined_data.to_csv(output_csv_path, index=False)
+                return output_csv_path
+            else:
+                return None
+    except Exception as e:
+        logging.error(f"Error converting PDF to CSV: {e}")
+        return None
+
 def main():
     st.title("Financial Analyzer App")
     st.write("Analyze financial data of companies.")
@@ -396,32 +424,32 @@ def main():
                 elif uploaded_file.name.endswith(".xlsx"):
                     financial_data = pd.read_excel(uploaded_file)
                 elif uploaded_file.name.endswith(".pdf"):
-                    with pdfplumber.open(uploaded_file) as pdf:
-                        tables = []
-                        for page in pdf.pages:
-                            extracted_tables = page.extract_tables()
-                            for table in extracted_tables:
-                                tables.append(pd.DataFrame(table))
-                        if tables:
-                            financial_data = pd.concat(tables, ignore_index=True)
-                            st.write("Extracted Tables from PDF:")
-                            st.dataframe(financial_data)
-                        else:
-                            st.warning("No tables found in the PDF. Attempting to extract unstructured data...")
-                            financial_data = extract_unstructured_pdf_data(uploaded_file)
-                            if financial_data is not None:
-                                st.write("Extracted Unstructured Data from PDF:")
-                                st.dataframe(financial_data)
-                            else:
-                                st.error("Failed to extract data from the PDF. Please ensure the data is structured.")
+                    # Convert PDF to CSV
+                    st.info("Converting PDF to CSV for efficient data extraction...")
+                    csv_path = convert_pdf_to_csv(uploaded_file)
+                    if csv_path:
+                        st.success(f"PDF successfully converted to CSV: {csv_path}")
+                        with open(csv_path, "rb") as f:
+                            st.download_button(
+                                label="Download Extracted CSV",
+                                data=f,
+                                file_name="extracted_data.csv",
+                                mime="text/csv"
+                            )
+                        financial_data = pd.read_csv(csv_path)
+                        st.write("Extracted Data from PDF (as CSV):")
+                        st.dataframe(financial_data)
+                    else:
+                        st.error("No tables found in the PDF. Please ensure the data is structured.")
 
             # Handle scraping if no file is uploaded
-            if not financial_data and company_name and website_url:
-                st.warning("Scraping is disallowed by robots.txt. Please upload a file instead.")
-                return
+            if financial_data is None or (isinstance(financial_data, pd.DataFrame) and financial_data.empty):
+                if company_name and website_url:
+                    st.warning("Scraping is disallowed by robots.txt. Please upload a file instead.")
+                    return
 
             # Display and analyze financial data
-            if financial_data is not None:
+            if financial_data is not None and not financial_data.empty:
                 st.write("Financial Data:")
                 st.dataframe(financial_data)
 
