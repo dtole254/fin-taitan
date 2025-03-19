@@ -325,6 +325,43 @@ class FinancialAnalyzer:
 
         analysis = {}
 
+def extract_unstructured_pdf_data(pdf_file):
+    """
+    Extracts unstructured data from a PDF file and attempts to process it into a structured format.
+
+    Args:
+        pdf_file: The uploaded PDF file.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the extracted data, or None if extraction fails.
+    """
+    try:
+        with pdfplumber.open(pdf_file) as pdf:
+            raw_text = ""
+            for page in pdf.pages:
+                raw_text += page.extract_text()
+
+            if not raw_text.strip():
+                return None
+
+            # Process raw text to extract financial data using regular expressions
+            data = []
+            lines = raw_text.split("\n")
+            for line in lines:
+                # Example: Match lines with financial data patterns (e.g., "Revenue: $123,456")
+                match = re.match(r"(.+?):\s*([\d,.\(\)\$]+)", line)
+                if match:
+                    key, value = match.groups()
+                    data.append([key.strip(), value.strip()])
+
+            if data:
+                return pd.DataFrame(data, columns=["Metric", "Value"])
+            else:
+                return None
+    except Exception as e:
+        logging.error(f"Error extracting unstructured data from PDF: {e}")
+        return None
+
 def main():
     st.title("Financial Analyzer App")
     st.write("Analyze financial data of companies.")
@@ -362,7 +399,13 @@ def main():
                             st.write("Extracted Tables from PDF:")
                             st.dataframe(financial_data)
                         else:
-                            st.warning("No tables found in the PDF. Please ensure the data is structured.")
+                            st.warning("No tables found in the PDF. Attempting to extract unstructured data...")
+                            financial_data = extract_unstructured_pdf_data(uploaded_file)
+                            if financial_data is not None:
+                                st.write("Extracted Unstructured Data from PDF:")
+                                st.dataframe(financial_data)
+                            else:
+                                st.error("Failed to extract data from the PDF. Please ensure the data is structured.")
 
             # Handle scraping if no file is uploaded
             if not financial_data and company_name and website_url:
