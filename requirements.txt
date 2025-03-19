@@ -2,3 +2,4 @@ streamlit
 requests
 beautifulsoup4
 pandas
+PyPDF2
