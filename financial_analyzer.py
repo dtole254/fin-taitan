@@ -13,6 +13,7 @@ from time import sleep  # For retry mechanism
 import argparse  # For command-line arguments
 import json  # For configuration file support
 import PyPDF2  # For extracting text from PDF files
+import pdfplumber  # For extracting tables from PDF files
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -350,13 +351,18 @@ def main():
                 elif uploaded_file.name.endswith(".xlsx"):
                     financial_data = pd.read_excel(uploaded_file)
                 elif uploaded_file.name.endswith(".pdf"):
-                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                    pdf_text = ""
-                    for page in pdf_reader.pages:
-                        pdf_text += page.extract_text()
-                    st.write("Extracted Text from PDF:")
-                    st.text(pdf_text)
-                    st.warning("PDF parsing is limited to text extraction. Please ensure the data is structured.")
+                    with pdfplumber.open(uploaded_file) as pdf:
+                        tables = []
+                        for page in pdf.pages:
+                            extracted_tables = page.extract_tables()
+                            for table in extracted_tables:
+                                tables.append(pd.DataFrame(table))
+                        if tables:
+                            financial_data = pd.concat(tables, ignore_index=True)
+                            st.write("Extracted Tables from PDF:")
+                            st.dataframe(financial_data)
+                        else:
+                            st.warning("No tables found in the PDF. Please ensure the data is structured.")
 
             # Handle scraping if no file is uploaded
             if not financial_data and company_name and website_url:
