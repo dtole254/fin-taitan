@@ -14,6 +14,8 @@ import argparse  # For command-line arguments
 import json  # For configuration file support
 import PyPDF2  # For extracting text from PDF files
 import pdfplumber  # For extracting tables from PDF files
+from PIL import Image  # For image processing
+import pytesseract  # For OCR (Optical Character Recognition)
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -372,30 +374,109 @@ def extract_unstructured_pdf_data(pdf_file):
 
 def convert_pdf_to_csv(pdf_file, output_csv_path="extracted_data.csv"):
     """
-    Converts a PDF file into a CSV file by extracting tables.
+    Converts a PDF file into a CSV file by extracting tables or unstructured text.
 
     Args:
         pdf_file: The uploaded PDF file.
         output_csv_path (str): The path to save the generated CSV file.
 
     Returns:
-        str: The path to the generated CSV file, or None if no tables were found.
+        str: The path to the generated CSV file, or None if no data was found.
     """
     try:
         with pdfplumber.open(pdf_file) as pdf:
             tables = []
+            raw_text = ""
+
+            # Extract tables
             for page in pdf.pages:
                 extracted_tables = page.extract_tables()
                 for table in extracted_tables:
                     tables.append(pd.DataFrame(table))
+                raw_text += page.extract_text()
+
+            # If tables are found, save them to CSV
             if tables:
                 combined_data = pd.concat(tables, ignore_index=True)
                 combined_data.to_csv(output_csv_path, index=False)
                 return output_csv_path
-            else:
-                return None
+
+            # If no tables are found, process unstructured text
+            if raw_text.strip():
+                lines = raw_text.split("\n")
+                structured_data = []
+
+                for line in lines:
+                    # Match patterns like "Revenue: $123,456" or "Net Income 123,456"
+                    match = re.match(r"(.+?):\s*([\d,.\(\)\$]+)", line) or re.match(r"(.+?)\s+([\d,.\(\)\$]+)", line)
+                    if match:
+                        key, value = match.groups()
+                        structured_data.append([key.strip(), value.strip()])
+                    else:
+                        # Fallback: Extract numeric values from unstructured lines
+                        numbers = re.findall(r"[\d,.\(\)\$]+", line)
+                        if numbers:
+                            structured_data.append([line.strip(), " | ".join(numbers)])
+
+                if structured_data:
+                    df = pd.DataFrame(structured_data, columns=["Description", "Values"])
+                    df.to_csv(output_csv_path, index=False)
+                    return output_csv_path
+
+            return None
     except Exception as e:
         logging.error(f"Error converting PDF to CSV: {e}")
+        return None
+
+def extract_text_from_image(image_file):
+    """
+    Extracts text from an image file using OCR.
+
+    Args:
+        image_file: The uploaded image file.
+
+    Returns:
+        str: The extracted text from the image.
+    """
+    try:
+        image = Image.open(image_file)
+        text = pytesseract.image_to_string(image)
+        return text
+    except Exception as e:
+        logging.error(f"Error extracting text from image: {e}")
+        return None
+
+def process_extracted_text_to_dataframe(text):
+    """
+    Processes extracted text into a structured DataFrame.
+
+    Args:
+        text (str): The extracted text from an image or unstructured source.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing structured financial data, or None if processing fails.
+    """
+    try:
+        lines = text.split("\n")
+        structured_data = []
+
+        for line in lines:
+            # Match patterns like "Revenue: $123,456" or "Net Income 123,456"
+            match = re.match(r"(.+?):\s*([\d,.\(\)\$]+)", line) or re.match(r"(.+?)\s+([\d,.\(\)\$]+)", line)
+            if match:
+                key, value = match.groups()
+                structured_data.append([key.strip(), value.strip()])
+            else:
+                # Fallback: Extract numeric values from unstructured lines
+                numbers = re.findall(r"[\d,.\(\)\$]+", line)
+                if numbers:
+                    structured_data.append([line.strip(), " | ".join(numbers)])
+
+        if structured_data:
+            return pd.DataFrame(structured_data, columns=["Description", "Values"])
+        return None
+    except Exception as e:
+        logging.error(f"Error processing extracted text into DataFrame: {e}")
         return None
 
 def main():
@@ -406,8 +487,8 @@ def main():
     company_name = st.text_input("Enter the company name:")
     website_url = st.text_input("Enter the company's financial data URL:")
 
-    # File uploader for CSV, Excel, and PDF files
-    uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, or PDF):", type=["csv", "xlsx", "pdf"])
+    # File uploader for CSV, Excel, PDF, and image files
+    uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, PDF, or Image):", type=["csv", "xlsx", "pdf", "png", "jpg", "jpeg"])
 
     if st.button("Analyze"):
         if not company_name and not uploaded_file:
@@ -440,7 +521,22 @@ def main():
                         st.write("Extracted Data from PDF (as CSV):")
                         st.dataframe(financial_data)
                     else:
-                        st.error("No tables found in the PDF. Please ensure the data is structured.")
+                        st.error("No data could be extracted from the PDF. Please ensure the data is structured.")
+                elif uploaded_file.name.endswith((".png", ".jpg", ".jpeg")):
+                    # Extract text from image
+                    st.info("Extracting text from image...")
+                    extracted_text = extract_text_from_image(uploaded_file)
+                    if extracted_text:
+                        st.write("Extracted Text from Image:")
+                        st.text(extracted_text)
+                        financial_data = process_extracted_text_to_dataframe(extracted_text)
+                        if financial_data is not None and not financial_data.empty:
+                            st.write("Structured Data from Image:")
+                            st.dataframe(financial_data)
+                        else:
+                            st.error("Failed to structure data from the extracted text. Please ensure the image contains readable financial data.")
+                    else:
+                        st.error("Failed to extract text from the image. Please ensure the image is clear and contains readable text.")
 
             # Handle scraping if no file is uploaded
             if financial_data is None or (isinstance(financial_data, pd.DataFrame) and financial_data.empty):
