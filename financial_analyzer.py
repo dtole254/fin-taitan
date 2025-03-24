@@ -2116,4 +2116,65 @@ def display_world_indices(self):
     indices_df = pd.DataFrame(list(self.indices_data.items()), columns=["Index", "Price"])
     st.dataframe(indices_df)
 
-# ...existing code...
+def schedule_analysis(company_name, website_url=None, interval=24):
+    """
+    Schedules periodic financial analysis for a company.
+
+    Args:
+        company_name (str): The name of the company.
+        website_url (str, optional): The URL of the company's financial statements. Defaults to None.
+        interval (int): The interval in hours for running the analysis. Defaults to 24 hours.
+    """
+    def run_analysis_and_notify():
+        """
+        Runs the financial analysis and sends notifications if significant changes are detected.
+        """
+        logging.info(f"Running scheduled analysis for {company_name}...")
+        analyzer = FinancialAnalyzer(company_name, website_url=website_url)
+        financial_data = analyzer.scrape_financial_data()
+
+        if financial_data is not None:
+            analyzer.financial_data = financial_data
+            analysis_results = analyzer.analyze_financial_health()
+
+            if analysis_results:
+                significant_changes = {
+                    k: v for k, v in analysis_results.items()
+                    if k.endswith("Significant Change") and v
+                }
+
+                if significant_changes:
+                    subject = f"Financial Analysis Alert: {company_name}"
+                    body = f"Significant changes detected in the following metrics for {company_name}:\n"
+                    for key in significant_changes:
+                        metric = key.replace(" Significant Change", "")
+                        body += f"- {metric}: {analysis_results[metric]} (Change: {analysis_results.get(metric + ' Change', 'N/A')})\n"
+                    body += f"\nView the full analysis here: {website_url or 'No website URL provided.'}"
+
+                    analyzer.send_email_notification(subject, body)
+                else:
+                    logging.info(f"No significant changes detected for {company_name}.")
+            else:
+                logging.error(f"Failed to analyze financial health for {company_name}.")
+        else:
+            logging.error(f"Failed to fetch financial data for {company_name}.")
+
+    # Schedule the analysis
+    schedule.every(interval).hours.do(run_analysis_and_notify)
+    logging.info(f"Scheduled analysis for {company_name} every {interval} hours.")
+
+    # Run the scheduler in a separate thread
+    def run_scheduler():
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+
+    threading.Thread(target=run_scheduler, daemon=True).start()
+
+if __name__ == "__main__":
+    # Example usage of scheduled analysis
+    if SCHEDULED_ANALYSIS:
+        schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
+
+    main()
+```
