@@ -935,18 +935,24 @@ def resolve_company_and_exchange(company_name):
         tuple: A tuple containing the stock symbol and exchange code, or (None, None) if not found.
     """
     company_name = company_name.strip().lower()  # Normalize case and whitespace
+    logging.debug(f"Resolving company name: {company_name}")
 
     # Find the stock symbol
     stock_symbol = COMPANY_TO_SYMBOL.get(company_name)
+    logging.debug(f"Resolved stock symbol: {stock_symbol}")
 
     # Resolve the exchange code
     exchange_code = STOCK_TO_EXCHANGE.get(stock_symbol)
+    logging.debug(f"Resolved exchange code: {exchange_code}")
 
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
     if not exchange_code:
         logging.error(f"Exchange name for stock symbol '{stock_symbol}' not found in the mapping.")
     return stock_symbol, exchange_code
+
+# Ensure debug logging is enabled
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Global variable to store the latest data
 latest_data = {"financial_data": {}, "news": []}
