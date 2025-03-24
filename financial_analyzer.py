@@ -1322,7 +1322,6 @@ def main():
     # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
 
-
     # Option to provide a URL for financial statements
     financial_url = st.text_input("Enter the URL of the company's financial statements (optional):")
 
@@ -1361,7 +1360,7 @@ def main():
                 st.success("Structured data (table) extracted from PDF.")
             else:
                 unstructured_data_df = extract_unstructured_pdf_data(uploaded_file)
-                if unstructured_data_df is not None and not unstructured_data_df.empty):
+                if unstructured_data_df is not None and not unstructured_data_df.empty:
                     financial_data = unstructured_data_df
                     st.success("Unstructured data extracted from PDF.")
                 else:
@@ -1389,10 +1388,7 @@ def main():
             ratios_df = calculate_ratios_with_standards(financial_data)
             if not ratios_df.empty:
                 st.subheader("Financial Ratios with Industry Standards")
-                st.dataframe(ratios_df.style.set_table_styles(
-                    [{'selector': 'th', 'props': [('border', '1px solid black')]},
-                     {'selector': 'td', 'props': [('border', '1px solid black')]}]
-                ))
+                display_table(ratios_df, "Financial Ratios with Industry Standards")
             else:
                 st.error("Could not calculate financial ratios.")
         else:
