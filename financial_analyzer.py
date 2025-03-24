@@ -941,11 +941,10 @@ def resolve_company_and_exchange(company_name):
     stock_symbol = next((symbol for name, symbol in COMPANY_TO_SYMBOL.items() if name.lower() == company_name), None)
 
     # Find the exchange code
+    exchange_code = None
     if stock_symbol:
         # Use a default mapping for known companies
-        exchange_code = "NASDAQ" if stock_symbol in ["AAPL", "NVDA"] else None
-    else:
-        exchange_code = None
+        exchange_code = next((code for name, code in EXCHANGE_TO_CODE.items() if name.lower() in ["nasdaq", "new york stock exchange"]), None)
 
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
