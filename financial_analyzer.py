@@ -1336,6 +1336,7 @@ def fetch_news_with_api(company_name):
     """
     if not NEWS_API_KEY:
         logging.warning("News API key is missing. Skipping news fetching.")
+        st.warning("News API key is not configured. Unable to fetch news.")
         return []
 
     url = f"https://newsapi.org/v2/everything?q={urllib.parse.quote_plus(company_name)}&sortBy=publishedAt&apiKey={NEWS_API_KEY}"
@@ -1343,9 +1344,12 @@ def fetch_news_with_api(company_name):
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         articles = response.json().get("articles", [])
+        if not articles:
+            st.info(f"No recent news found for {company_name}.")
         return [{"title": article["title"], "url": article["url"]} for article in articles]
     except Exception as e:
         logging.error(f"Error fetching news for {company_name}: {e}")
+        st.error(f"An error occurred while fetching news for {company_name}.")
         return []
 
 def analyze_financial_health(ratios):
@@ -1419,6 +1423,14 @@ def calculate_ratios_with_standards(financial_data):
         current_liabilities_col = "Current Liabilities"
         total_equity_col = "Total Equity"
 
+        # Check for missing columns
+        required_columns = [revenue_col, net_income_col, total_assets_col, total_liabilities_col]
+        missing_columns = [col for col in required_columns if col not in financial_data.columns]
+        if missing_columns:
+            logging.error(f"Missing required columns for ratio calculation: {missing_columns}")
+            st.error(f"Could not calculate financial ratios. Missing columns: {', '.join(missing_columns)}")
+            return pd.DataFrame()
+
         # Profit Margin
         if revenue_col in financial_data and net_income_col in financial_data:
             revenue = pd.to_numeric(financial_data[revenue_col], errors='coerce').iloc[-1]
@@ -1455,34 +1467,11 @@ def calculate_ratios_with_standards(financial_data):
                 "Explanation": "Indicates the company's ability to pay short-term obligations."
             })
 
-        # Return on Assets (ROA)
-        if net_income_col in financial_data and total_assets_col in financial_data:
-            net_income = pd.to_numeric(financial_data[net_income_col], errors='coerce').iloc[-1]
-            total_assets = pd.to_numeric(financial_data[total_assets_col], errors='coerce').iloc[-1]
-            roa = (net_income / total_assets * 100) if total_assets != 0 else None
-            ratios.append({
-                "Metric": "Return on Assets (ROA)",
-                "Value": f"{roa:,.2f}%" if roa is not None else "N/A",
-                "Industry Standard": "5-10%",
-                "Explanation": "Shows how efficiently the company uses its assets to generate profit."
-            })
-
-        # Return on Equity (ROE)
-        if net_income_col in financial_data and total_equity_col in financial_data:
-            net_income = pd.to_numeric(financial_data[net_income_col], errors='coerce').iloc[-1]
-            total_equity = pd.to_numeric(financial_data[total_equity_col], errors='coerce').iloc[-1]
-            roe = (net_income / total_equity * 100) if total_equity != 0 else None
-            ratios.append({
-                "Metric": "Return on Equity (ROE)",
-                "Value": f"{roe:,.2f}%" if roe is not None else "N/A",
-                "Industry Standard": "10-15%",
-                "Explanation": "Measures the return generated on shareholders' equity."
-            })
-
         return pd.DataFrame(ratios)
     except Exception as e:
         logging.error(f"Error calculating ratios: {e}")
-        return pd.DataFrame(ratios)
+        st.error("An unexpected error occurred while calculating financial ratios.")
+        return pd.DataFrame()
 
 def scrape_nyse_indices():
     """
