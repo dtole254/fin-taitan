@@ -1008,6 +1008,20 @@ def main():
         else:
             st.warning("Could not resolve the stock symbol or exchange name. Please check the company name.")
 
+    # Display the last known data if available
+    st.subheader("Last Known Financial Data")
+    if latest_data["financial_data"]:
+        st.json(latest_data["financial_data"])
+    else:
+        st.info("No financial data available yet.")
+
+    st.subheader("Last Known News")
+    if latest_data["news"]:
+        for news_item in latest_data["news"]:
+            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+    else:
+        st.info("No news available yet.")
+
     # Button to start tracking
     if st.button("Start Tracking"):
         if not company_name:
