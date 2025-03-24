@@ -1201,6 +1201,7 @@ def fetch_and_update_data(stock_symbol, exchange_code=None):
             # Display updated financial data
             st.subheader("Latest Financial Data")
             if latest_data["financial_data"]:
+                logging.debug(f"Fetched financial data structure: {latest_data['financial_data']}")
                 display_table(latest_data["financial_data"], "Latest Financial Data")
             else:
                 st.info("No financial data available yet.")
@@ -1426,10 +1427,13 @@ def calculate_ratios_with_standards(financial_data):
         # Check for missing columns
         required_columns = [revenue_col, net_income_col, total_assets_col, total_liabilities_col]
         missing_columns = [col for col in required_columns if col not in financial_data.columns]
+
         if missing_columns:
-            logging.error(f"Missing required columns for ratio calculation: {missing_columns}")
-            st.error(f"Could not calculate financial ratios. Missing columns: {', '.join(missing_columns)}")
-            return pd.DataFrame()
+            logging.warning(f"Missing required columns for ratio calculation: {missing_columns}")
+            st.warning(f"Missing columns detected: {', '.join(missing_columns)}. Default values will be used.")
+            # Add missing columns with default values
+            for col in missing_columns:
+                financial_data[col] = 0  # Default to 0 for calculations
 
         # Profit Margin
         if revenue_col in financial_data and net_income_col in financial_data:
