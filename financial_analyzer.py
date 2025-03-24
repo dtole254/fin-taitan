@@ -940,16 +940,21 @@ def resolve_company_and_exchange(company_name):
     # Find the stock symbol
     stock_symbol = next((symbol for name, symbol in COMPANY_TO_SYMBOL.items() if name.lower() == company_name), None)
 
-    # Find the exchange code
-    exchange_code = None
-    if stock_symbol:
-        # Use a default mapping for known companies
-        exchange_code = next((code for name, code in EXCHANGE_TO_CODE.items() if name.lower() in ["nasdaq", "new york stock exchange"]), None)
+    # Map stock symbols to their default exchange codes
+    stock_to_exchange = {
+        "NVDA": "NASDAQ",
+        "AAPL": "NASDAQ",
+        "KCB": "Nairobi Stock Exchange",
+        "SCOM": "Nairobi Stock Exchange",
+    }
+
+    # Resolve the exchange code
+    exchange_code = stock_to_exchange.get(stock_symbol)
 
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
     if not exchange_code:
-        logging.error(f"Exchange name for company '{company_name}' not found in the mapping.")
+        logging.error(f"Exchange name for stock symbol '{stock_symbol}' not found in the mapping.")
     return stock_symbol, exchange_code
 
 # Global variable to store the latest data
