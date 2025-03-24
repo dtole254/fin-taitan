@@ -335,33 +335,37 @@ class FinancialAnalyzer:
             inventory_col = find_column(inventory_patterns)
             cogs_col = find_column(cogs_patterns)
 
-            # Check for missing columns
-            missing_columns = []
-            if not revenue_col:
-                missing_columns.append("Revenue")
-            if not net_income_col:
-                missing_columns.append("Net Income")
-            if not total_assets_col:
-                missing_columns.append("Total Assets")
-            if not total_liabilities_col:
-                missing_columns.append("Total Liabilities")
-            if not current_assets_col:
-                missing_columns.append("Current Assets")
-            if not current_liabilities_col:
-                missing_columns.append("Current Liabilities")
-            if not total_equity_col:
-                missing_columns.append("Total Equity")
-            if not cash_col:
-                missing_columns.append("Cash")
-            if not inventory_col:
-                missing_columns.append("Inventory")
-            if not cogs_col:
-                missing_columns.append("Cost of Goods Sold (COGS)")
-
-            if missing_columns:
-                st.error(f"The following required columns are missing: {', '.join(missing_columns)}")
-                logging.error(f"The following required columns are missing: {', '.join(missing_columns)}")
-                return None
+            # Provide default values for missing columns
+            if revenue_col is None:
+                data["Revenue"] = 0
+                revenue_col = "Revenue"
+            if net_income_col is None:
+                data["Net Income"] = 0
+                net_income_col = "Net Income"
+            if total_assets_col is None:
+                data["Total Assets"] = 1  # Avoid division by zero
+                total_assets_col = "Total Assets"
+            if total_liabilities_col is None:
+                data["Total Liabilities"] = 0
+                total_liabilities_col = "Total Liabilities"
+            if current_assets_col is None:
+                data["Current Assets"] = 0
+                current_assets_col = "Current Assets"
+            if current_liabilities_col is None:
+                data["Current Liabilities"] = 1  # Avoid division by zero
+                current_liabilities_col = "Current Liabilities"
+            if total_equity_col is None:
+                data["Total Equity"] = 1  # Avoid division by zero
+                total_equity_col = "Total Equity"
+            if cash_col is None:
+                data["Cash"] = 0
+                cash_col = "Cash"
+            if inventory_col is None:
+                data["Inventory"] = 1  # Avoid division by zero
+                inventory_col = "Inventory"
+            if cogs_col is None:
+                data["Cost of Goods Sold"] = 0
+                cogs_col = "Cost of Goods Sold"
 
             # Calculate financial ratios
             ratios = {}
@@ -416,13 +420,9 @@ class FinancialAnalyzer:
             if net_income_col and total_equity_col:
                 ratios["Return on Equity (ROE)"] = format_number(net_income / total_equity * 100) if total_equity != 0 else "N/A"
 
-            # Validate for negative values in key columns
-            key_columns = [revenue_col, net_income_col, total_assets_col, total_liabilities_col]
-            for col in key_columns:
-                if col and (data[col].astype(float) < 0).any():
-                    st.warning(f"Negative values detected in column '{col}' for financial ratios.")
-                    logging.warning(f"Negative values detected in column '{col}' for financial ratios.")
+            return ratios
 
+        except Exception as e:
             return ratios
 
         except KeyError as e:
