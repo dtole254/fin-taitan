@@ -950,6 +950,17 @@ def rate_limit():
 
 def scrape_cnbc_africa(company_name):
     """
+    Scrapes financial news from CNBC Africa for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.cnbcafrica.com/search/"
+        params = {"q": company_name}
         headers = {"User-Agent": USER_AGENT}
         response = requests.get(base_url, headers=headers, params=params)
         response.raise_for_status()
