@@ -994,13 +994,49 @@ def detect_changes(old_data, new_data):
     new_hash = hashlib.md5(json.dumps(new_data, sort_keys=True).encode()).hexdigest()
     return old_hash != new_hash
 
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "YOUR_FINNHUB_API_KEY")
+
+def fetch_finnhub_news(stock_symbol):
+    """
+    Fetches financial news for a specific stock symbol using Finnhub API.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "AAPL" for Apple).
+
+    Returns:
+        list: A list of news articles with titles and links.
+    """
+    try:
+        base_url = f"https://finnhub.io/api/v1/news"
+        params = {
+            "category": "general",
+            "token": FINNHUB_API_KEY
+        }
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        news_data = response.json()
+
+        # Extract relevant news
+        news = []
+        for item in news_data:
+            if "headline" in item and "url" in item:
+                news.append({"title": item["headline"], "link": item["url"]})
+
+        logging.info(f"Fetched {len(news)} news articles from Finnhub.")
+        return news
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Finnhub API: HTTP error for {stock_symbol}: {e}")
+        return []
+    except Exception as e:
+        logging.error(f"Error fetching news from Finnhub for {stock_symbol}: {e}")
+        return []
+
 def main():
     st.title("Real-Time Financial Analyzer App")
     st.write("Analyze and track financial data of companies in real time.")
 
     # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
-
 
     # Automatically resolve exchange name
     if company_name:
@@ -1022,12 +1058,12 @@ def main():
             st.error("Could not resolve the stock symbol. Please check your inputs.")
             return
 
-        # Fetch news from Yahoo Finance
+        # Fetch news from Finnhub
         st.info(f"Fetching news for {company_name} ({stock_symbol})...")
-        yahoo_data = scrape_yahoo_finance(stock_symbol)
-        if yahoo_data and yahoo_data["news"]:
+        news = fetch_finnhub_news(stock_symbol)
+        if news:
             st.subheader("Latest News:")
-            for item in yahoo_data["news"]:
+            for item in news:
                 st.markdown(f"- [{item['title']}]({item['link']})")
         else:
             st.warning("No news found.")
