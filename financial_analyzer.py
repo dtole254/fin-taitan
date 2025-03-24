@@ -908,21 +908,20 @@ def aggregate_data(stock_symbol, exchange_code=None):
 
 # Mapping of company names to stock symbols
 COMPANY_TO_SYMBOL = {
-    "NVIDIA": "NVDA",
-    "Apple": "AAPL",
-    "KCB Group": "KCB",
-    "Safaricom": "SCOM",
+    "nvidia": "NVDA",
+    "apple": "AAPL",
+    "kcb group": "KCB",
+    "safaricom": "SCOM",
     # Add more companies as needed
 }
 
-# Mapping of exchange names to exchange codes
-EXCHANGE_TO_CODE = {
-    "NASDAQ": "NASDAQ",
-    "New York Stock Exchange": "NYSE",
-    "London Stock Exchange": "LSE",
-    "Hong Kong Stock Exchange": "HKEX",
-    "Nairobi Stock Exchange": "NSE",
-    # Add more exchanges as needed
+# Mapping of stock symbols to exchange codes
+STOCK_TO_EXCHANGE = {
+    "NVDA": "NASDAQ",
+    "AAPL": "NASDAQ",
+    "KCB": "Nairobi Stock Exchange",
+    "SCOM": "Nairobi Stock Exchange",
+    # Add more mappings as needed
 }
 
 def resolve_company_and_exchange(company_name):
@@ -938,18 +937,10 @@ def resolve_company_and_exchange(company_name):
     company_name = company_name.strip().lower()  # Normalize case and whitespace
 
     # Find the stock symbol
-    stock_symbol = next((symbol for name, symbol in COMPANY_TO_SYMBOL.items() if name.lower() == company_name), None)
-
-    # Map stock symbols to their default exchange codes
-    stock_to_exchange = {
-        "NVDA": "NASDAQ",
-        "AAPL": "NASDAQ",
-        "KCB": "Nairobi Stock Exchange",
-        "SCOM": "Nairobi Stock Exchange",
-    }
+    stock_symbol = COMPANY_TO_SYMBOL.get(company_name)
 
     # Resolve the exchange code
-    exchange_code = stock_to_exchange.get(stock_symbol)
+    exchange_code = STOCK_TO_EXCHANGE.get(stock_symbol)
 
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
