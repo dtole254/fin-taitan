@@ -937,6 +937,144 @@ def rate_limit():
     """
     time.sleep(2)  # Delay of 2 seconds between requests
 
+def scrape_cnbc_africa(company_name):
+    """
+    Scrapes financial news from CNBC Africa for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.cnbcafrica.com/search/"
+        params = {"q": company_name}
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("div", class_="search-result")
+            for item in news_items:
+                title = item.find("a").text.strip()
+                link = item.find("a")["href"]
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"CNBC Africa: News not found for {company_name}: {e}")
+
+        return {"financial_data": {}, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping CNBC Africa for {company_name}: {e}")
+        return None
+
+def scrape_cnbc(company_name):
+    """
+    Scrapes financial news from CNBC for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.cnbc.com/search/"
+        params = {"query": company_name}
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("div", class_="SearchResultCard")
+            for item in news_items:
+                title = item.find("a").text.strip()
+                link = item.find("a")["href"]
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"CNBC: News not found for {company_name}: {e}")
+
+        return {"financial_data": {}, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping CNBC for {company_name}: {e}")
+        return None
+
+def scrape_business_daily_africa(company_name):
+    """
+    Scrapes financial news from Business Daily Africa for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.businessdailyafrica.com/search"
+        params = {"q": company_name}
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("div", class_="search-result")
+            for item in news_items:
+                title = item.find("a").text.strip()
+                link = item.find("a")["href"]
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"Business Daily Africa: News not found for {company_name}: {e}")
+
+        return {"financial_data": {}, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping Business Daily Africa for {company_name}: {e}")
+        return None
+
+def scrape_ft(company_name):
+    """
+    Scrapes financial news from Financial Times (FT) for the specified company.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        dict: A dictionary containing relevant news.
+    """
+    try:
+        base_url = "https://www.ft.com/search"
+        params = {"q": company_name}
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers, params=params)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract relevant news
+        news = []
+        try:
+            news_items = soup.find_all("li", class_="o-teaser-collection__item")
+            for item in news_items:
+                title = item.find("a", class_="js-teaser-heading-link").text.strip()
+                link = item.find("a", class_="js-teaser-heading-link")["href"]
+                if not link.startswith("http"):
+                    link = f"https://www.ft.com{link}"  # Ensure full URL
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"FT: News not found for {company_name}: {e}")
+
+        return {"financial_data": {}, "news": news}
+    except Exception as e:
+        logging.error(f"Error scraping FT for {company_name}: {e}")
+        return None
+
 def aggregate_data(stock_symbol, exchange_code=None):
     """
     Aggregates financial data and news from multiple sources, including specific stock exchanges.
@@ -952,6 +1090,10 @@ def aggregate_data(stock_symbol, exchange_code=None):
         scrape_yahoo_finance,
         scrape_alpha_vantage,
         scrape_forbes,
+        scrape_cnbc_africa,
+        scrape_cnbc,
+        scrape_business_daily_africa,
+        scrape_ft,  # Added Financial Times (FT)
     ]
 
     # Add specific exchange scraping based on the exchange code
@@ -1031,6 +1173,7 @@ latest_data = {"financial_data": {}, "news": []}
 def fetch_and_update_data(stock_symbol, exchange_code=None):
     """
     Fetches and updates the latest financial data and news for a given stock symbol.
+    Also calculates and displays financial ratios.
 
     Args:
         stock_symbol (str): The stock symbol (e.g., "AAPL").
@@ -1043,10 +1186,28 @@ def fetch_and_update_data(stock_symbol, exchange_code=None):
         if detect_changes(latest_data, new_data):
             logging.info("New data detected. Updating...")
             latest_data = new_data
+
+            # Display updated financial data
+            st.subheader("Latest Financial Data")
+            if latest_data["financial_data"]:
+                display_table(latest_data["financial_data"], "Latest Financial Data")
+            else:
+                st.info("No financial data available yet.")
+
+            # Calculate and display financial ratios
+            if "financial_data" in latest_data and isinstance(latest_data["financial_data"], dict):
+                financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
+                ratios_df = calculate_ratios_with_standards(financial_data_df)
+                if not ratios_df.empty:
+                    st.subheader("Financial Ratios with Industry Standards")
+                    display_table(ratios_df, "Financial Ratios with Industry Standards")
+                else:
+                    st.warning("Could not calculate financial ratios.")
         else:
             logging.info("No changes detected in the data.")
     else:
         logging.warning(f"Failed to fetch new data for {stock_symbol}.")
+        st.error(f"Failed to fetch new data for {stock_symbol}.")
 
 def detect_changes(old_data, new_data):
     """
@@ -1312,6 +1473,68 @@ def calculate_ratios_with_standards(financial_data):
         logging.error(f"Error calculating ratios: {e}")
         return pd.DataFrame(ratios)
 
+def scrape_nyse_indices():
+    """
+    Scrapes major world indices data from the NYSE website.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing indices data, or None if an error occurs.
+    """
+    try:
+        base_url = "https://www.nyse.com/index"
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(base_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract indices data
+        indices_data = []
+        try:
+            table = soup.find("table", {"class": "indices-table"})  # Adjust class based on actual HTML
+            rows = table.find_all("tr")
+            for row in rows[1:]:  # Skip header row
+                cols = row.find_all("td")
+                cols = [col.text.strip() for col in cols]
+                if len(cols) >= 3:  # Ensure sufficient columns
+                    indices_data.append({
+                        "Index": cols[0],
+                        "Last Price": cols[1],
+                        "Change": cols[2],
+                        "Change (%)": cols[3] if len(cols) > 3 else "N/A"
+                    })
+        except Exception as e:
+            logging.warning(f"Error extracting indices data: {e}")
+
+        if indices_data:
+            return pd.DataFrame(indices_data)
+        else:
+            logging.warning("No indices data found.")
+            return None
+    except Exception as e:
+        logging.error(f"Error scraping NYSE indices: {e}")
+        return None
+
+def display_indices_chart(indices_df):
+    """
+    Displays a chart of major world indices using Streamlit.
+
+    Args:
+        indices_df (pd.DataFrame): The DataFrame containing indices data.
+    """
+    try:
+        if indices_df is not None and not indices_df.empty:
+            st.subheader("Major World Indices")
+            st.dataframe(indices_df)
+
+            # Plot indices data
+            indices_df["Change (%)"] = pd.to_numeric(indices_df["Change (%)"].str.replace("%", ""), errors="coerce")
+            st.line_chart(indices_df.set_index("Index")["Change (%)"])
+        else:
+            st.warning("No indices data available to display.")
+    except Exception as e:
+        logging.error(f"Error displaying indices chart: {e}")
+        st.error("An error occurred while displaying indices data.")
+
 def main():
     """
     Main function to run the Streamlit application.
@@ -1451,6 +1674,15 @@ def main():
 
         st.info(f"Refreshing data for {company_name} ({stock_symbol}) on {exchange_code}...")
         fetch_and_update_data(stock_symbol, exchange_code)
+
+    # Button to fetch and display major world indices
+    if st.button("Fetch Major World Indices"):
+        st.info("Fetching major world indices data...")
+        indices_df = scrape_nyse_indices()
+        if indices_df is not None:
+            display_indices_chart(indices_df)
+        else:
+            st.error("Failed to fetch indices data.")
 
     # Display the latest data
     st.subheader("Latest Financial Data")
