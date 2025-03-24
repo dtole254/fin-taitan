@@ -912,7 +912,7 @@ COMPANY_TO_SYMBOL = {
     "apple": "AAPL",
     "kcb group": "KCB",
     "safaricom": "SCOM",
-    # Ensure all relevant companies are included
+    # Add more companies as needed
 }
 
 # Mapping of stock symbols to exchange codes
@@ -921,7 +921,7 @@ STOCK_TO_EXCHANGE = {
     "AAPL": "NASDAQ",
     "KCB": "Nairobi Stock Exchange",
     "SCOM": "Nairobi Stock Exchange",
-    # Ensure all relevant mappings are included
+    # Add more mappings as needed
 }
 
 def resolve_company_and_exchange(company_name):
@@ -939,16 +939,17 @@ def resolve_company_and_exchange(company_name):
 
     # Find the stock symbol
     stock_symbol = COMPANY_TO_SYMBOL.get(company_name)
-    logging.debug(f"Resolved stock symbol: {stock_symbol}")
+    if not stock_symbol:
+        logging.error(f"Company name '{company_name}' not found in the mapping.")
+        return None, None
 
     # Resolve the exchange code
     exchange_code = STOCK_TO_EXCHANGE.get(stock_symbol)
-    logging.debug(f"Resolved exchange code: {exchange_code}")
-
-    if not stock_symbol:
-        logging.error(f"Company name '{company_name}' not found in the mapping.")
     if not exchange_code:
         logging.error(f"Exchange name for stock symbol '{stock_symbol}' not found in the mapping.")
+        return stock_symbol, None
+
+    logging.debug(f"Resolved stock symbol: {stock_symbol}, exchange code: {exchange_code}")
     return stock_symbol, exchange_code
 
 # Ensure debug logging is enabled
@@ -1000,14 +1001,15 @@ def main():
     # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
 
-
     # Automatically resolve exchange name
     if company_name:
         stock_symbol, exchange_code = resolve_company_and_exchange(company_name)
         if stock_symbol and exchange_code:
             st.success(f"Resolved: {company_name} ({stock_symbol}) on {exchange_code}")
-        else:
-            st.warning("Could not resolve the stock symbol or exchange name. Please check the company name.")
+        elif not stock_symbol:
+            st.error(f"Could not resolve the stock symbol for '{company_name}'. Please check the company name.")
+        elif not exchange_code:
+            st.error(f"Could not resolve the exchange code for stock symbol '{stock_symbol}'. Please check the mappings.")
 
     # Display the last known data if available
     st.subheader("Last Known Financial Data")
