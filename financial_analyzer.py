@@ -683,14 +683,20 @@ def scrape_yahoo_finance(stock_symbol):
         # Extract relevant news
         news = []
         try:
-            news_items = soup.find_all("li", class_="js-stream-content")  # Verify this class is still valid
+            # Updated selector based on Yahoo Finance's current HTML structure
+            news_items = soup.find_all("a", {"data-test": "quote-news-headlines"})  # Adjusted selector
+            logging.info(f"News items found: {len(news_items)}")
             for item in news_items:
-                title = item.find("a").text
-                link = f"https://finance.yahoo.com{item.find('a')['href']}"
+                title = item.text.strip()
+                link = item["href"]
+                if not link.startswith("http"):
+                    link = f"https://finance.yahoo.com{link}"  # Ensure full URL
                 news.append({"title": title, "link": link})
         except Exception as e:
             logging.warning(f"Yahoo Finance: News not found for {stock_symbol}: {e}")
+            logging.warning(f"Exception during news extraction: {e}")
 
+        logging.info(f"Extracted news: {news}")
         return {"financial_data": financial_data, "news": news}
     except requests.exceptions.HTTPError as e:
         logging.error(f"Yahoo Finance: HTTP error for {stock_symbol}: {e}")
