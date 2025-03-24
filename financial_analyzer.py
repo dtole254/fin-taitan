@@ -672,6 +672,9 @@ def scrape_yahoo_finance(stock_symbol):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
+        # Log the raw HTML content for debugging
+        logging.info(f"HTML Content for {stock_symbol}:\n{soup.prettify()}")
+
         # Extract financial data
         financial_data = {}
         try:
@@ -683,7 +686,7 @@ def scrape_yahoo_finance(stock_symbol):
         # Extract relevant news
         news = []
         try:
-            # Updated selector based on Yahoo Finance's current HTML structure
+            # Attempt to find news items using BeautifulSoup
             news_items = soup.find_all("a", {"data-test": "quote-news-headlines"})  # Adjusted selector
             logging.info(f"News items found: {len(news_items)}")
             for item in news_items:
@@ -692,6 +695,11 @@ def scrape_yahoo_finance(stock_symbol):
                 if not link.startswith("http"):
                     link = f"https://finance.yahoo.com{link}"  # Ensure full URL
                 news.append({"title": title, "link": link})
+
+            # If no news items are found, log and switch to Selenium
+            if not news_items:
+                logging.warning("No news items found using BeautifulSoup. Switching to Selenium for JavaScript rendering.")
+                news = scrape_yahoo_finance_with_selenium(stock_symbol)
         except Exception as e:
             logging.warning(f"Yahoo Finance: News not found for {stock_symbol}: {e}")
             logging.warning(f"Exception during news extraction: {e}")
@@ -704,6 +712,47 @@ def scrape_yahoo_finance(stock_symbol):
     except Exception as e:
         logging.error(f"Error scraping Yahoo Finance for {stock_symbol}: {e}")
         return None
+
+def scrape_yahoo_finance_with_selenium(stock_symbol):
+    """
+    Scrapes financial news from Yahoo Finance using Selenium for JavaScript-rendered content.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "NVDA" for NVIDIA).
+
+    Returns:
+        list: A list of news articles with titles and links.
+    """
+    try:
+        base_url = f"https://finance.yahoo.com/quote/{stock_symbol}"
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")  # Run in headless mode
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+        # Navigate to the Yahoo Finance page
+        driver.get(base_url)
+        time.sleep(5)  # Wait for JavaScript to load the content
+
+        # Extract news items
+        news = []
+        try:
+            news_elements = driver.find_elements(By.CSS_SELECTOR, "a[data-test='quote-news-headlines']")  # Adjusted selector
+            logging.info(f"News items found with Selenium: {len(news_elements)}")
+            for element in news_elements:
+                title = element.text.strip()
+                link = element.get_attribute("href")
+                news.append({"title": title, "link": link})
+        except Exception as e:
+            logging.warning(f"Selenium: News not found for {stock_symbol}: {e}")
+
+        driver.quit()
+        return news
+    except Exception as e:
+        logging.error(f"Error scraping Yahoo Finance with Selenium for {stock_symbol}: {e}")
+        return []
 
 # API Key Management: Use environment variables for Alpha Vantage API key
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "YOUR_DEFAULT_API_KEY")
