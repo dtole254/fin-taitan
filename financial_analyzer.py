@@ -311,17 +311,17 @@ class FinancialAnalyzer:
                         return match
                 return None
 
-            # Define patterns for financial terms
-            revenue_patterns = [r'revenue', r'sales', r'total revenue', r'net sales']
-            net_income_patterns = [r'net income', r'profit', r'net profit', r'earnings']
-            total_assets_patterns = [r'total assets', r'assets']
-            total_liabilities_patterns = [r'total liabilities', r'liabilities']
-            current_assets_patterns = [r'current assets', r'short-term assets']
-            current_liabilities_patterns = [r'current liabilities', r'short-term liabilities']
-            total_equity_patterns = [r'total equity', r'shareholders equity', r'owners equity']
+            # Define patterns for financial terms, including alternative names
+            revenue_patterns = [r'revenue', r'sales', r'total revenue', r'net sales', r'income from operations']
+            net_income_patterns = [r'net income', r'profit', r'net profit', r'earnings', r'net earnings']
+            total_assets_patterns = [r'total assets', r'assets', r'overall assets']
+            total_liabilities_patterns = [r'total liabilities', r'liabilities', r'total debts']
+            current_assets_patterns = [r'current assets', r'short-term assets', r'liquid assets']
+            current_liabilities_patterns = [r'current liabilities', r'short-term liabilities', r'current debts']
+            total_equity_patterns = [r'total equity', r'shareholders equity', r'owners equity', r'stockholders equity']
             cash_patterns = [r'cash', r'cash equivalents', r'cash and cash equivalents']
-            inventory_patterns = [r'inventory', r'stock']
-            cogs_patterns = [r'cost of goods sold', r'cogs', r'cost of sales']
+            inventory_patterns = [r'inventory', r'stock', r'goods in stock']
+            cogs_patterns = [r'cost of goods sold', r'cogs', r'cost of sales', r'cost of revenue']
 
             # Identify required columns
             revenue_col = find_column(revenue_patterns)
@@ -2034,3 +2034,4 @@ def load_financial_data(self, file):
         st.error("Uploaded financial data is invalid.")
         logging.error("Uploaded financial data is invalid.")
         self.financial_data = None
+```
