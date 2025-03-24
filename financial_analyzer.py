@@ -683,7 +683,7 @@ def scrape_yahoo_finance(stock_symbol):
         # Extract relevant news
         news = []
         try:
-            news_items = soup.find_all("li", class_="js-stream-content")
+            news_items = soup.find_all("li", class_="js-stream-content")  # Verify this class is still valid
             for item in news_items:
                 title = item.find("a").text
                 link = f"https://finance.yahoo.com{item.find('a')['href']}"
@@ -1001,6 +1001,7 @@ def main():
     # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
 
+
     # Automatically resolve exchange name
     if company_name:
         stock_symbol, exchange_code = resolve_company_and_exchange(company_name)
@@ -1010,6 +1011,26 @@ def main():
             st.error(f"Could not resolve the stock symbol for '{company_name}'. Please check the company name.")
         elif not exchange_code:
             st.error(f"Could not resolve the exchange code for stock symbol '{stock_symbol}'. Please check the mappings.")
+
+    # Button to fetch and display news
+    if st.button("Fetch News"):
+        if not company_name:
+            st.error("Please provide the company name.")
+            return
+
+        if not stock_symbol:
+            st.error("Could not resolve the stock symbol. Please check your inputs.")
+            return
+
+        # Fetch news from Yahoo Finance
+        st.info(f"Fetching news for {company_name} ({stock_symbol})...")
+        yahoo_data = scrape_yahoo_finance(stock_symbol)
+        if yahoo_data and yahoo_data["news"]:
+            st.subheader("Latest News:")
+            for item in yahoo_data["news"]:
+                st.markdown(f"- [{item['title']}]({item['link']})")
+        else:
+            st.warning("No news found.")
 
     # Display the last known data if available
     st.subheader("Last Known Financial Data")
