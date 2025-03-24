@@ -146,6 +146,7 @@ class FinancialAnalyzer:
         self.ticker = None
         self.indices_data = {}
         self.tracking_thread = None
+        self.stop_tracking = False
 
     def resolve_company_ticker(self, company_name):
         """
@@ -512,319 +513,181 @@ class FinancialAnalyzer:
                 missing_columns.append("COGS")
 
             if missing_columns:
-                st.error(f"Could not calculate financial ratios. Missing columns: {', '.join(missing_columns)}")
-                logging.error(f"Missing columns: {', '.join(missing_columns)}")
+                st.error(f"Missing the following financial data columns: {', '.join(missing_columns)}")
+                logging.error(f"Missing the following financial data columns: {', '.join(missing_columns)}")
                 return None
 
             # Calculate ratios
             ratios = {}
             try:
-                # Profitability Ratios
-                if revenue_col and net_income_col:
-                    ratios['Gross Profit Margin'] = ((data[revenue_col] - data[cogs_col]) / data[revenue_col]).mean() * 100 if cogs_col else None
-                    ratios['Net Profit Margin'] = (data[net_income_col] / data[revenue_col]).mean() * 100
-                    ratios['Return on Assets'] = (data[net_income_col] / data[total_assets_col]).mean() * 100
-                    ratios['Return on Equity'] = (data[net_income_col] / data[total_equity_col]).mean() * 100
-                else:
-                    ratios['Gross Profit Margin'] = None
-                    ratios['Net Profit Margin'] = None
-                    ratios['Return on Assets'] = None
-                    ratios['Return on Equity'] = None
+                # Basic Ratios
+                ratios['gross_profit_margin'] = ((data[revenue_col] - data[cogs_col]) / data[revenue_col]).mean() if revenue_col and cogs_col else None
+                ratios['net_profit_margin'] = (data[net_income_col] / data[revenue_col]).mean() if revenue_col and net_income_col else None
+                ratios['return_on_assets'] = (data[net_income_col] / data[total_assets_col]).mean() if net_income_col and total_assets_col else None
+                ratios['return_on_equity'] = (data[net_income_col] / data[total_equity_col]).mean() if net_income_col and total_equity_col else None
+                ratios['debt_to_equity_ratio'] = (data[total_liabilities_col] / data[total_equity_col]).mean() if total_liabilities_col and total_equity_col else None
+                ratios['current_ratio'] = (data[current_assets_col] / data[current_liabilities_col]).mean() if current_assets_col and current_liabilities_col else None
+                ratios['quick_ratio'] = ((data[current_assets_col] - data[inventory_col]) / data[current_liabilities_col]).mean() if current_assets_col and current_liabilities_col and inventory_col else None
+                ratios['cash_ratio'] = (data[cash_col] / data[current_liabilities_col]).mean() if cash_col and current_liabilities_col else None
+                ratios['inventory_turnover'] = (data[cogs_col] / data[inventory_col]).mean() if cogs_col and inventory_col else None
+                ratios['asset_turnover'] = (data[revenue_col] / data[total_assets_col]).mean() if revenue_col and total_assets_col else None
 
-                # Liquidity Ratios
-                if current_assets_col and current_liabilities_col:
-                    ratios['Current Ratio'] = (data[current_assets_col] / data[current_liabilities_col]).mean()
-                    ratios['Quick Ratio'] = ((data[current_assets_col] - data[inventory_col]) / data[current_liabilities_col]).mean() if inventory_col else None
-                else:
-                    ratios['Current Ratio'] = None
-                    ratios['Quick Ratio'] = None
-
-                # Solvency Ratios
-                if total_liabilities_col and total_assets_col and total_equity_col:
-                  ratios['Debt to Equity Ratio'] = (data[total_liabilities_col] / data[total_equity_col]).mean()
-                  ratios['Total Debt to Total Assets'] = (data[total_liabilities_col] / data[total_assets_col]).mean()
-                else:
-                    ratios['Debt to Equity Ratio'] = None
-                    ratios['Total Debt to Total Assets'] = None
-
-                # Efficiency Ratios
-                if revenue_col and total_assets_col:
-                    ratios['Asset Turnover Ratio'] = (data[revenue_col] / data[total_assets_col]).mean()
-                else:
-                    ratios['Asset Turnover Ratio'] = None
-
-                if cogs_col and inventory_col:
-                    ratios['Inventory Turnover Ratio'] = (data[cogs_col] / data[inventory_col]).mean() if inventory_col else None
-                else:
-                     ratios['Inventory Turnover Ratio'] = None
-
-                # Cash Flow Ratios
-                if cash_col and current_liabilities_col:
-                    ratios['Cash Ratio'] = (data[cash_col] / data[current_liabilities_col]).mean()
-                else:
-                    ratios['Cash Ratio'] = None
-
-                return ratios
-            except Exception as e:
-                st.error(f"Error calculating financial ratios: {e}")
-                logging.error(f"Error calculating financial ratios: {e}")
+            except KeyError as e:
+                st.error(f"Column not found: {e}")
+                logging.error(f"Column not found: {e}")
                 return None
+            except ZeroDivisionError:
+                st.error("Division by zero encountered.")
+                logging.error("Division by zero encountered.")
+                return None
+            except Exception as e:
+                st.error(f"An unexpected error occurred while calculating ratios: {e}")
+                logging.error(f"An unexpected error occurred while calculating ratios: {e}")
+                return None
+            return ratios
 
-    def display_financial_data(self):
-        """
-        Displays the financial data and calculated ratios.
-        """
-        if self.financial_data is not None and not self.financial_data.empty:
-            st.subheader("Financial Data")
-            st.dataframe(self.financial_data)  # Use st.dataframe for better display
-        else:
-            st.info("No financial data to display.")
+        except Exception as e:
+            st.error(f"An error occurred while calculating ratios: {e}")
+            logging.error(f"An error occurred while calculating ratios: {e}")
+            return None
 
-        ratios = self.calculate_ratios()
-        if ratios:
-            st.subheader("Financial Ratios")
-            # Use a dictionary for a clear layout
-            ratios_dict = {
-                "Profitability Ratios": {
-                    "Gross Profit Margin": ratios.get('Gross Profit Margin'),
-                    "Net Profit Margin": ratios.get('Net Profit Margin'),
-                    "Return on Assets": ratios.get('Return on Assets'),
-                    "Return on Equity": ratios.get('Return on Equity'),
-                },
-                "Liquidity Ratios": {
-                    "Current Ratio": ratios.get('Current Ratio'),
-                    "Quick Ratio": ratios.get('Quick Ratio'),
-                },
-                "Solvency Ratios": {
-                    "Debt to Equity Ratio": ratios.get('Debt to Equity Ratio'),
-                    "Total Debt to Total Assets": ratios.get('Total Debt to Total Assets'),
-                },
-                "Efficiency Ratios": {
-                    "Asset Turnover Ratio": ratios.get('Asset Turnover Ratio'),
-                    "Inventory Turnover Ratio": ratios.get('Inventory Turnover Ratio'),
-                },
-                "Cash Flow Ratios":{
-                    "Cash Ratio": ratios.get('Cash Ratio')
-                }
-            }
-
-            # Display using st.table for better formatting
-            st.table(pd.DataFrame(ratios_dict))
-        else:
-            st.info("Could not calculate financial ratios.")
-
-    def display_stock_data(self):
+    def analyze_financial_health(self, ratios):
         """
-        Displays the stock data.
-        """
-        if self.stock_data is not None:
-            st.subheader("Stock Data")
-            st.write(f"Stock Price: {self.stock_data}")
-        else:
-            st.info("No stock data to display.")
-
-    def display_news(self):
-        """
-        Displays the news.
-        """
-        if self.news:
-            st.subheader("Latest News")
-            for article in self.news:
-                if NEWS_SOURCE == "NewsAPI":
-                    st.markdown(f"**{article['title']}**")
-                    st.write(article['description'])
-                    st.write(f"Source: {article['source']['name']}")
-                    st.write(f"[Link]({article['url']})")
-                    st.write("---")  # Separator
-                elif NEWS_SOURCE == "Finnhub":
-                    st.markdown(f"**{article['headline']}**")
-                    st.write(article['summary'])
-                    st.write(f"Source: {article['source']}")
-                    st.write(f"[Link]({article['url']})")
-                    st.write("---")
-        else:
-            st.info("No news to display.")
-
-    def load_financial_data_from_pdf(self, file):
-        """
-        Loads financial data from a PDF file.
+        Analyzes the financial health of the company based on the calculated ratios.
 
         Args:
-            file (UploadedFile): The uploaded PDF file.
+            ratios (dict): A dictionary containing the calculated ratios.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the extracted financial data, or None if an error occurs.
+            dict: A dictionary containing the analysis of the financial health, or None if an error occurs.
+        """
+        if ratios is None:
+            st.error("Ratios are not available.")
+            logging.error("Ratios are not available.")
+            return None
+
+        analysis = {}
+        try:
+            # Profitability Analysis
+            analysis['gross_profit_margin_analysis'] = "Good" if ratios.get('gross_profit_margin', 0) > 0.5 else "Poor"
+            analysis['net_profit_margin_analysis'] = "Good" if ratios.get('net_profit_margin', 0) > 0.1 else "Poor"
+            analysis['roa_analysis'] = "Good" if ratios.get('return_on_assets', 0) > 0.1 else "Poor"
+            analysis['roe_analysis'] = "Good" if ratios.get('return_on_equity', 0) > 0.15 else "Poor"
+
+            # Solvency Analysis
+            analysis['debt_to_equity_analysis'] = "Low Risk" if ratios.get('debt_to_equity_ratio', 0) < 1 else "High Risk"
+
+            # Liquidity Analysis
+            analysis['current_ratio_analysis'] = "Sufficient" if ratios.get('current_ratio', 0) > 1.5 else "Insufficient"
+            analysis['quick_ratio_analysis'] = "Sufficient" if ratios.get('quick_ratio', 0) > 1 else "Insufficient"
+            analysis['cash_ratio_analysis'] = "Sufficient" if ratios.get('cash_ratio', 0) > 0.5 else "Insufficient"
+
+            # Efficiency Analysis
+            analysis['inventory_turnover_analysis'] = "Efficient" if ratios.get('inventory_turnover', 0) > 6 else "Inefficient"
+            analysis['asset_turnover_analysis'] = "Efficient" if ratios.get('asset_turnover', 0) > 1 else "Inefficient"
+        except Exception as e:
+            st.error(f"An error occurred during financial health analysis: {e}")
+            logging.error(f"An error occurred during financial health analysis: {e}")
+            return None
+        return analysis
+
+    def extract_text_from_pdf(self, file_path):
+        """
+        Extracts text from a PDF file.
+
+        Args:
+            file_path (str): The path to the PDF file.
+
+        Returns:
+            str: The extracted text, or None if an error occurs.
         """
         try:
-            # Save the uploaded file temporarily
-            temp_file_path = f"/tmp/{file.name}"
-            with open(temp_file_path, "wb") as f:
-                f.write(file.getvalue())
-
-            # 1. Try to extract tables directly using pdfplumber (more robust)
-            tables = []
-            try:
-                with pdfplumber.open(temp_file_path) as pdf:
-                    for page in pdf.pages:
-                        tables.extend(page.extract_tables())  # Get all tables from the page
-
-                if tables:
-                    for table in tables:
-                        df = pd.DataFrame(table[1:], columns=table[0])
-                        df = df.dropna(axis=1, how='all')
-                        df = df.dropna(axis=0, how='all')
-                         # Convert to numeric, handle errors
-                        for col in df.columns:
-                            df[col] = pd.to_numeric(df[col].str.replace(r'[$,()]', '', regex=True), errors='coerce')
-                        # Basic validation (optional, but good practice)
-                        if not df.empty and len(df.columns) > 1:  # Ensure it's not an empty or single-column DataFrame
-                            return df # Return the first valid table
-                    logging.info(f"Successfully extracted table from PDF {file.name} using pdfplumber")
-                    return None # Return None if no valid table
-            except Exception as e:
-                logging.warning(f"Error extracting tables from PDF {file.name} using pdfplumber: {e}")
-
-            # 2. If direct table extraction fails, try OCR and string parsing (less reliable, fallback)
             text = ""
-            try:
-                with open(temp_file_path, "rb") as f:
-                    pdf_reader = PyPDF2.PdfReader(f)
-                    for page in pdf_reader.pages:
-                        text += page.extract_text() or ""  # Extract text, handle None
-            except Exception as e:
-                logging.error(f"Error extracting text from PDF {file.name} using PyPDF2: {e}")
-                text = ""
-
-            if not text:
-                try:
-                    image = Image.open(temp_file_path)
-                    text = pytesseract.image_to_string(image)
-                except Exception as e:
-                    logging.error(f"Error extracting text from PDF {file.name} using pytesseract: {e}")
-                    st.error(f"Could not extract data from PDF {file.name} using table extraction or OCR.")
-                    return None
-
-            # Clean the text
-            text = re.sub(r'(\n\s*\n)+', '\n', text)  # Remove multiple empty lines
-            lines = text.split('\n')
-            data = [line.split() for line in lines]
-            df = pd.DataFrame(data)
-
-             # Basic structure check:  Look for a DataFrame-like structure
-            if df.shape[0] < 2 or df.shape[1] < 2:
-                st.error(f"Could not find a suitable data table in PDF {file.name}.")
-                logging.error(f"Could not find a suitable data table in PDF {file.name}.")
-                return None
-
-            # Attempt to locate header row
-            header_row = None
-            for i, row in enumerate(data[:5]):  # Check the first 5 rows
-                if any(re.search(r'(revenue|income|assets|liabilities|equity)', str(cell), re.IGNORECASE) for cell in row):
-                    header_row = i
-                    break
-
-            if header_row is not None:
-                df.columns = df.iloc[header_row]
-                df = df[header_row + 1:]
-            else:
-                 logging.warning(f"Could not identify header row in PDF {file.name}.  Using first row as header.")
-                 df.columns = df.iloc[0]
-                 df = df[1:]
-
-            df = df.dropna(axis=1, how='all')
-            df = df.dropna(axis=0, how='all')
-
-            for col in df.columns:
-                try:
-                    df[col] = pd.to_numeric(df[col].str.replace(r'[$,()]', '', regex=True), errors='coerce')
-                except (ValueError, AttributeError):
-                    pass
-            return df
-
+            with open(file_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                for page in reader.pages:
+                    text += page.extract_text() or ""  # changed from extractText to extract_text
+            return text
         except Exception as e:
-            st.error(f"Error loading financial data from PDF {file.name}: {e}")
-            logging.error(f"Error loading financial data from PDF {file.name}: {e}")
+            st.error(f"Error extracting text from PDF: {e}")
+            logging.error(f"Error extracting text from PDF: {e}")
             return None
-        finally:
-            # Clean up the temporary file
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
 
-    def load_financial_data_from_excel(self, file):
+    def extract_tables_from_pdf(self, file_path):
         """
-        Loads financial data from an Excel file.
+        Extracts tables from a PDF file.
 
         Args:
-            file (UploadedFile): The uploaded Excel file.
+            file_path (str): The path to the PDF file.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the extracted financial data, or None if an error occurs.
+            list: A list of pandas DataFrames, or None if an error occurs.
         """
         try:
-            df = pd.read_excel(file)
-            df = df.dropna(axis=1, how='all')
-            df = df.dropna(axis=0, how='all')
-
-            for col in df.columns:
-                try:
-                    df[col] = pd.to_numeric(df[col].str.replace(r'[$,()]', '', regex=True), errors='coerce')
-                except (ValueError, AttributeError):
-                    pass
-            return df
+            tables = []
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_tables = page.extract_tables()
+                    if page_tables:
+                        for table in page_tables:
+                            df = pd.DataFrame(table[1:], columns=table[0])
+                            tables.append(df)
+            return tables
         except Exception as e:
-            st.error(f"Error loading financial data from Excel {file.name}: {e}")
-            logging.error(f"Error loading financial data from Excel {file.name}: {e}")
+            st.error(f"Error extracting tables from PDF: {e}")
+            logging.error(f"Error extracting tables from PDF: {e}")
             return None
 
-    def load_financial_data_from_csv(self, file):
+    def extract_text_from_image(self, image_path):
         """
-        Loads financial data from a CSV file.
+       Extracts text from an image using OCR.
 
-        Args:
-            file (UploadedFile): The uploaded CSV file.
+       Args:
+           image_path (str): The path to the image file.
 
-        Returns:
-            pd.DataFrame: A DataFrame containing the extracted financial data, or None if an error occurs.
-        """
+       Returns:
+           str: The extracted text, or None if an error occurs.
+       """
         try:
-            df = pd.read_csv(file)
-            df = df.dropna(axis=1, how='all')
-            df = df.dropna(axis=0, how='all')
-            for col in df.columns:
-                try:
-                    df[col] = pd.to_numeric(df[col].str.replace(r'[$,()]', '', regex=True), errors='coerce')
-                except (ValueError, AttributeError):
-                    pass
-            return df
+            img = Image.open(image_path)
+            text = pytesseract.image_to_string(img)
+            return text
         except Exception as e:
-            st.error(f"Error loading financial data from CSV {file.name}: {e}")
-            logging.error(f"Error loading financial data from CSV {file.name}: {e}")
+            st.error(f"Error extracting text from image: {e}")
+            logging.error(f"Error extracting text from image: {e}")
             return None
 
-    def validate_website_url(self, url):
+    def analyze_document(self, file_path):
         """
-        Validates the format of a website URL.
+        Analyzes a document (PDF, image) to extract text and tables.
 
         Args:
-            url (str): The URL to validate.
+            file_path (str): The path to the document file.
 
         Returns:
-            bool: True if the URL is valid, False otherwise.
+            tuple: A tuple containing the extracted text (str) and tables (list of DataFrames),
+                   or (None, None) if an error occurs.
         """
-        if not url:
-            return True  # Empty URL is considered valid here, the scraping logic handles it
-        regex = re.compile(
-            r'^(?:http|ftp)s?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?)'  # domain...
-            r'|localhost'  # localhost...
-            r'|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return re.match(regex, url) is not None
+        text = ""
+        tables = []
+        if file_path.lower().endswith(".pdf"):
+            text = self.extract_text_from_pdf(file_path)
+            tables = self.extract_tables_from_pdf(file_path)
+        elif file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+            text = self.extract_text_from_image(file_path)
+        else:
+            st.error("Unsupported file type. Please upload a PDF or an image (PNG, JPG, JPEG).")
+            logging.error("Unsupported file type. Please upload a PDF or an image (PNG, JPG, JPEG).")
+            return None, None
+
+        if text is None and tables is None:
+            return None, None  # Return None, None explicitly
+
+        return text, tables
 
     def fetch_world_indices(self):
         """
-        Fetches major world indices data (e.g., S&P 500, Dow Jones).
+        Fetches major world indices data.  Uses either AlphaVantage or RapidAPI.
         """
         if WORLD_INDICES_API == "AlphaVantage":
             self._fetch_world_indices_alpha_vantage()
@@ -840,11 +703,12 @@ class FinancialAnalyzer:
             return
 
         indices = {
-            "S&P 500": "SPY",
-            "Dow Jones": "DIA",
-            "NASDAQ": "QQQ",
-            "FTSE 100": "FTSE",  # Using a symbol that might provide relevant data
-            "Nikkei 225": "NIKKEI",
+            "S&P 500": "SPX",
+            "Dow Jones": "DJIA",
+            "Nasdaq": "IXIC",
+            "FTSE 100": "FTSE",
+            "Nikkei 225": "N225",
+            "Hang Seng": "HSI"
         }
         for index_name, symbol in indices.items():
             url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_VANTAGE_API_KEY}"
@@ -853,14 +717,9 @@ class FinancialAnalyzer:
                 response.raise_for_status()
                 data = response.json()
                 if "Time Series (Daily)" in data:
-                    # Get the latest day's data
-                    latest_date = sorted(data["Time Series (Daily)"].keys())[0]
-                    latest_data = data["Time Series (Daily)"][latest_date]
-                    self.indices_data[index_name] = {
-                        "price": float(latest_data["4. close"]),
-                        "change": float(latest_data["4. close"]) - float(latest_data["1. open"]),
-                        "date": latest_date
-                    }
+                    daily_data = data["Time Series (Daily)"]
+                    latest_date = sorted(daily_data.keys())[0]  # Get the most recent date
+                    self.indices_data[index_name] = float(daily_data[latest_date]["4. close"])
                 else:
                     logging.warning(f"Could not retrieve data for {index_name} from Alpha Vantage.")
             except requests.exceptions.RequestException as e:
@@ -874,103 +733,225 @@ class FinancialAnalyzer:
             logging.warning("RapidAPI key is missing. World indices fetching will be skipped.")
             return
 
-        indices = {
-            "S&P 500": "S%5EPGSPC",  # Use the correct RapidAPI symbol
-            "Dow Jones": "S%5EDJI",
-            "NASDAQ": "S%5EIXIC",
-            "FTSE 100": "S%5EFTSE",
-            "Nikkei 225": "S%5EN225",
+        url = "https://world-stock-index.p.rapidapi.com/v1/worldindices"
+        headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY,
+            "X-RapidAPI-Host": "world-stock-index.p.rapidapi.com"
+        }
+        indices_map = {
+            "S&P 500": "S&P 500",
+            "Dow Jones": "Dow Jones Industrial Average",
+            "Nasdaq": "NASDAQ Composite",
+            "FTSE 100": "FTSE 100",
+            "Nikkei 225": "Nikkei 225",
+            "Hang Seng": "Hang Seng Index"
         }
 
-        for index_name, symbol in indices.items():
-            url = f"https://yh-finance.p.rapidapi.com/market/v2/get-quotes?symbols={symbol}&region=US"  # Or a suitable region
-            headers = {
-                "X-RapidAPI-Key": RAPIDAPI_KEY,
-                "X-RapidAPI-Host": "yh-finance.p.rapidapi.com"  # Correct Host
-            }
-            try:
-                response = requests.get(url, headers=headers, timeout=10)
-                response.raise_for_status()
-                data = response.json()
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
 
-                if 'quoteResponse' in data and 'result' in data['quoteResponse'] and len(data['quoteResponse']['result']) > 0:
-                    result = data['quoteResponse']['result'][0]  # Get the first result
-                    self.indices_data[index_name] = {
-                        "price": result.get('regularMarketPrice'),
-                        "change": result.get('regularMarketChange'),
-                         "date": result.get('regularMarketTime') #result.get('regularMarketTime')
-                    }
+            for index_name in indices_map:
+                for item in data:
+                    if item.get('name') == indices_map[index_name]:
+                        self.indices_data[index_name] = item.get('price')
+                        break
                 else:
                     logging.warning(f"Could not retrieve data for {index_name} from RapidAPI.")
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Error fetching world indices from RapidAPI: {e}")
-            except json.JSONDecodeError:
-                logging.error("Error decoding JSON response from RapidAPI.")
 
-    def display_world_indices(self):
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching world indices from RapidAPI: {e}")
+        except json.JSONDecodeError:
+            logging.error("Error decoding JSON response from RapidAPI.")
+
+    def track_stock_and_news(self):
         """
-        Displays the world indices data.
+        Tracks the stock price and news for the company periodically.
+        This function is intended to be run in a separate thread.
         """
-        if self.indices_data:
-            st.subheader("Major World Indices")
-            for index_name, data in self.indices_data.items():
-                st.write(f"{index_name}: Price: {data['price']:.2f}, Change: {data['change']:.2f}, Date: {data['date']}")
+        if not self.ticker:
+            logging.warning(
+                "Ticker is not available. Stock price and news tracking cannot start.")
+            return
+
+        while not self.stop_tracking:
+            try:
+                # Fetch stock price
+                price = self.fetch_stock_price(self.ticker)
+                if price is not None:  # Check for None
+                    self.stock_data = price
+                    logging.info(f"Stock price of {self.company_name} ({self.ticker}): {price}")
+
+                # Fetch news
+                news = self.fetch_company_news(self.company_name)
+                if news:
+                    self.news = news
+                    logging.info(f"Fetched {len(news)} news articles for {self.company_name}")
+
+                # Fetch world indices
+                self.fetch_world_indices()
+
+                time.sleep(600)  # Update every 10 minutes
+            except Exception as e:
+                logging.error(f"Error during stock and news tracking: {e}")
+                time.sleep(600)  # sleep to prevent rapid looping on error
+
+    def start_tracking(self):
+        """
+        Starts tracking the stock price and news in a separate thread.
+        """
+        if self.tracking_thread is None or not self.tracking_thread.is_alive():
+            self.stop_tracking = False  # Reset the stop flag
+            self.tracking_thread = threading.Thread(target=self.track_stock_and_news)
+            self.tracking_thread.daemon = True  # Allow the main thread to exit
+            self.tracking_thread.start()
+            logging.info(f"Started tracking stock price and news for {self.company_name}")
         else:
-            st.info("No world indices data to display.")
+            logging.info(f"Tracking is already in progress for {self.company_name}")
 
-    def run(self):
+    def stop_tracking(self):
         """
-        Runs the financial analysis process.
+        Stops the tracking thread.
         """
-        st.title("Financial Analyzer")
-        company_name = st.text_input("Enter company name:")
-        website_url = st.text_input("Enter company website URL:")
+        if self.tracking_thread and self.tracking_thread.is_alive():
+            self.stop_tracking = True
+            self.tracking_thread.join()  # Wait for the thread to finish
+            self.tracking_thread = None  # Clean up
+            logging.info(f"Stopped tracking stock price and news for {self.company_name}")
+        else:
+            logging.info(f"Tracking is not in progress for {self.company_name}")
 
-        # File upload for financial data
-        uploaded_file = st.file_uploader(
-            "Upload financial data (PDF, Excel, or CSV)", type=["pdf", "xlsx", "xls", "csv"]
-        )
 
-        if st.button("Analyze"):
+def main():
+    """
+    Main function to run the Streamlit application.
+    """
+    st.title("Financial Analyzer")
+
+    # Input for company name
+    company_name = st.text_input("Enter company name:")
+    website_url = st.text_input("Enter company website URL:")
+    uploaded_file = st.file_uploader("Upload a financial document (PDF, PNG, JPG, JPEG)", type=["pdf", "png", "jpg", "jpeg"])
+
+    # Initialize FinancialAnalyzer instance
+    analyzer = FinancialAnalyzer(company_name, website_url)
+
+    # Sidebar for additional options
+    with st.sidebar:
+        if st.button("Start Tracking Stock and News"):
             if not company_name:
-                st.error("Please enter a company name.")
-                return
+                st.sidebar.error("Please enter a company name before starting tracking.")
+            else:
+                if not analyzer.ticker:
+                  analyzer.ticker = analyzer.resolve_company_ticker(company_name)
+                analyzer.start_tracking()
+                st.sidebar.success(f"Started tracking {company_name}.  This may take a minute to start showing data.")
+        if st.button("Stop Tracking"):
+            analyzer.stop_tracking()
+            st.sidebar.info(f"Stopped tracking {company_name}.")
 
-            self.company_name = company_name
-            self.ticker = self.resolve_company_ticker(company_name)
+    if st.button("Analyze"):
+        if not company_name and not website_url and not uploaded_file:
+            st.error("Please enter a company name, website URL, or upload a file.")
+            return
 
-            if website_url:
-                if not self.validate_website_url(website_url):
-                    st.error("Invalid website URL. Please enter a valid URL (e.g., https://www.example.com)")
-                    return
-                self.website_url = website_url
-                self.financial_data = self.scrape_financial_data()
-
+        with st.spinner("Analyzing..."):
             if uploaded_file:
-                if uploaded_file.name.endswith(".pdf"):
-                    self.financial_data = self.load_financial_data_from_pdf(uploaded_file)
-                elif uploaded_file.name.endswith((".xlsx", ".xls")):
-                    self.financial_data = self.load_financial_data_from_excel(uploaded_file)
-                elif uploaded_file.name.endswith(".csv"):
-                    self.financial_data = self.load_financial_data_from_csv(uploaded_file)
+                # Save uploaded file
+                file_path = f"temp_{uploaded_file.name}"
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-            if self.ticker:
-                self.stock_data = self.fetch_stock_price(self.ticker)
-                self.news = self.fetch_company_news(company_name)
+                text, tables = analyzer.analyze_document(file_path)
+                if text:
+                    st.subheader("Extracted Text:")
+                    st.write(text)
+                if tables:
+                    st.subheader("Extracted Tables:")
+                    for i, table in enumerate(tables):
+                        st.write(f"Table {i + 1}:")
+                        st.dataframe(table)
 
-            self.fetch_world_indices()  # Fetch indices
+                # Attempt to get financial data from the tables
+                if tables:
+                    for table in tables:
+                        # Check for common financial table indicators (keywords in column names)
+                        for col in table.columns:
+                            if any(keyword in col.lower() for keyword in
+                                   ["revenue", "income", "asset", "liability", "equity", "cash"]):
+                                analyzer.financial_data = table
+                                break  # Use the first table that looks like financial data
+                        if analyzer.financial_data is not None:
+                            break
 
-            self.display_financial_data()
-            self.display_stock_data()
-            self.display_news()
-            self.display_world_indices() # Display
-        elif st.button("Clear Data"):
-            self.financial_data = None
-            self.stock_data = None
-            self.news = []
-            self.indices_data = {}
-            st.info("Data cleared. Please enter company name and URL or upload a file to analyze.")
+                # If no financial data extracted, try scraping
+                if analyzer.financial_data is None and website_url:
+                    analyzer.financial_data = analyzer.scrape_financial_data()
+
+                # Clean up the temporary file
+                os.remove(file_path)
+
+            elif website_url:
+                analyzer.financial_data = analyzer.scrape_financial_data()
+
+            elif company_name:
+                analyzer.ticker = analyzer.resolve_company_ticker(company_name)
+
+            if analyzer.ticker:
+                stock_price = analyzer.fetch_stock_price(analyzer.ticker)
+                news = analyzer.fetch_company_news(company_name)
+
+                if stock_price is not None:
+                    st.subheader("Stock Price:")
+                    st.write(f"Current Stock Price: {stock_price}")
+
+                if news:
+                    st.subheader("Latest News:")
+                    for article in news:
+                        if NEWS_SOURCE == "NewsAPI":
+                            st.write(f"**{article['title']}**")
+                            st.write(article['description'])
+                            st.write(f"[Source]({article['url']})")
+                            st.write(f"Published at: {article['publishedAt']}")
+                        elif NEWS_SOURCE == "Finnhub":
+                            st.write(f"**{article['headline']}**")
+                            st.write(article['summary'])
+                            st.write(f"[Source]({article['url']})")
+                            st.write(f"Published at: {article['datetime']}")
+                        st.write("---")
+
+            if analyzer.financial_data is not None:
+                st.subheader("Financial Data:")
+                st.dataframe(analyzer.financial_data)
+
+                ratios = analyzer.calculate_ratios()
+                if ratios:
+                    st.subheader("Financial Ratios:")
+                    st.write(ratios)
+
+                    analysis = analyzer.analyze_financial_health(ratios)
+                    if analysis:
+                        st.subheader("Financial Health Analysis:")
+                        st.write(analysis)
+                else:
+                    st.error("Could not calculate financial ratios.")
+            elif not website_url and not uploaded_file: # Make sure we only show this error when no data source is provided
+                st.error("Could not retrieve financial data. Please provide a website URL or upload a file.")
+
+    # Display world indices
+    st.subheader("World Indices")
+    analyzer.fetch_world_indices()  # Fetch indices
+    if analyzer.indices_data:
+        for index, value in analyzer.indices_data.items():
+            st.write(f"{index}: {value}")
+    else:
+        st.write("Failed to retrieve world indices data.")
+
+    # Clear session state
+    if st.button("Clear Analysis"):
+        st.session_state.clear()
+        st.rerun()
 
 if __name__ == "__main__":
-    financial_analyzer = FinancialAnalyzer("", "") #Removed hardcoded company name and website.
-    financial_analyzer.run()
+    main()
