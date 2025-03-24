@@ -323,33 +323,54 @@ class FinancialAnalyzer:
             # Calculate financial ratios
             ratios = {}
 
+            def format_number(value):
+                """
+                Formats a number with commas and two decimal places.
+
+                Args:
+                    value (float): The number to format.
+
+                Returns:
+                    str: The formatted number as a string.
+                """
+                return f"{value:,.2f}" if value is not None else "N/A"
+
             if revenue_col and net_income_col:
                 revenue = pd.to_numeric(data[revenue_col], errors='coerce').iloc[-1]
                 net_income = pd.to_numeric(data[net_income_col], errors='coerce').iloc[-1]
-                ratios["Profit Margin"] = net_income / revenue if revenue != 0 else None
+                ratios["Profit Margin"] = format_number(net_income / revenue * 100) if revenue != 0 else "N/A"
 
             if total_assets_col and total_liabilities_col:
                 total_assets = pd.to_numeric(data[total_assets_col], errors='coerce').iloc[-1]
                 total_liabilities = pd.to_numeric(data[total_liabilities_col], errors='coerce').iloc[-1]
-                ratios["Debt-to-Asset Ratio"] = total_liabilities / total_assets if total_assets != 0 else None
+                ratios["Debt-to-Asset Ratio"] = format_number(total_liabilities / total_assets * 100) if total_assets != 0 else "N/A"
 
             if current_assets_col and current_liabilities_col:
                 current_assets = pd.to_numeric(data[current_assets_col], errors='coerce').iloc[-1]
                 current_liabilities = pd.to_numeric(data[current_liabilities_col], errors='coerce').iloc[-1]
-                ratios["Current Ratio"] = current_assets / current_liabilities if current_liabilities != 0 else None
+                ratios["Current Ratio"] = format_number(current_assets / current_liabilities) if current_liabilities != 0 else "N/A"
 
             if total_equity_col and total_liabilities_col:
                 total_equity = pd.to_numeric(data[total_equity_col], errors='coerce').iloc[-1]
-                ratios["Debt-to-Equity Ratio"] = total_liabilities / total_equity if total_equity != 0 else None
+                ratios["Debt-to-Equity Ratio"] = format_number(total_liabilities / total_equity) if total_equity != 0 else "N/A"
 
             if cash_col and current_liabilities_col:
                 cash = pd.to_numeric(data[cash_col], errors='coerce').iloc[-1]
-                ratios["Cash Ratio"] = cash / current_liabilities if current_liabilities != 0 else None
+                ratios["Cash Ratio"] = format_number(cash / current_liabilities) if current_liabilities != 0 else "N/A"
 
             if inventory_col and cogs_col:
                 inventory = pd.to_numeric(data[inventory_col], errors='coerce').iloc[-1]
                 cogs = pd.to_numeric(data[cogs_col], errors='coerce').iloc[-1]
-                ratios["Inventory Turnover"] = cogs / inventory if inventory != 0 else None
+                ratios["Inventory Turnover"] = format_number(cogs / inventory) if inventory != 0 else "N/A"
+
+            if revenue_col and total_assets_col:
+                ratios["Asset Turnover Ratio"] = format_number(revenue / total_assets) if total_assets != 0 else "N/A"
+
+            if net_income_col and total_assets_col:
+                ratios["Return on Assets (ROA)"] = format_number(net_income / total_assets * 100) if total_assets != 0 else "N/A"
+
+            if net_income_col and total_equity_col:
+                ratios["Return on Equity (ROE)"] = format_number(net_income / total_equity * 100) if total_equity != 0 else "N/A"
 
             # Validate for negative values in key columns
             key_columns = [revenue_col, net_income_col, total_assets_col, total_liabilities_col]
@@ -904,27 +925,25 @@ EXCHANGE_TO_CODE = {
     # Add more exchanges as needed
 }
 
-def resolve_company_and_exchange(company_name, exchange_name):
+def resolve_company_and_exchange(company_name):
     """
-    Resolves the stock symbol and exchange code based on the company name and exchange name.
+    Resolves the stock symbol and exchange code based on the company name.
 
     Args:
         company_name (str): The name of the company.
-        exchange_name (str): The name of the exchange.
 
     Returns:
         tuple: A tuple containing the stock symbol and exchange code, or (None, None) if not found.
     """
     company_name = company_name.strip().lower()  # Normalize case and whitespace
-    exchange_name = exchange_name.strip().lower()  # Normalize case and whitespace
 
     stock_symbol = next((symbol for name, symbol in COMPANY_TO_SYMBOL.items() if name.lower() == company_name), None)
-    exchange_code = next((code for name, code in EXCHANGE_TO_CODE.items() if name.lower() == exchange_name), None)
+    exchange_code = next((code for name, code in EXCHANGE_TO_CODE.items() if name.lower() in company_name), None)
 
     if not stock_symbol:
         logging.error(f"Company name '{company_name}' not found in the mapping.")
     if not exchange_code:
-        logging.error(f"Exchange name '{exchange_name}' not found in the mapping.")
+        logging.error(f"Exchange name for company '{company_name}' not found in the mapping.")
     return stock_symbol, exchange_code
 
 # Global variable to store the latest data
@@ -966,70 +985,64 @@ def detect_changes(old_data, new_data):
     new_hash = hashlib.md5(json.dumps(new_data, sort_keys=True).encode()).hexdigest()
     return old_hash != new_hash
 
-def run_scheduler(stock_symbol, exchange_code=None):
-    """
-    Runs the scheduler to periodically fetch and update data.
-
-    Args:
-        stock_symbol (str): The stock symbol (e.g., "AAPL").
-        exchange_code (str, optional): The exchange code (e.g., "NASDAQ"). Defaults to None.
-    """
-    schedule.every(10).seconds.do(fetch_and_update_data, stock_symbol, exchange_code)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-def start_background_scheduler(stock_symbol, exchange_code=None):
-    """
-    Starts the scheduler in a separate thread.
-
-    Args:
-        stock_symbol (str): The stock symbol (e.g., "AAPL").
-        exchange_code (str, optional): The exchange code (e.g., "NASDAQ"). Defaults to None.
-    """
-    scheduler_thread = threading.Thread(target=run_scheduler, args=(stock_symbol, exchange_code), daemon=True)
-    scheduler_thread.start()
-
 def main():
     st.title("Real-Time Financial Analyzer App")
     st.write("Analyze and track financial data of companies in real time.")
 
-    # Input fields for company name and exchange name
+    # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
-    exchange_name = st.text_input("Enter the exchange name (e.g., 'NASDAQ', 'Nairobi Stock Exchange'):")
 
+
+    # Automatically resolve exchange name
+    if company_name:
+        stock_symbol, exchange_code = resolve_company_and_exchange(company_name)
+        if stock_symbol and exchange_code:
+            st.success(f"Resolved: {company_name} ({stock_symbol}) on {exchange_code}")
+        else:
+            st.warning("Could not resolve the stock symbol or exchange name. Please check the company name.")
+
+    # Button to start tracking
     if st.button("Start Tracking"):
-        if not company_name or not exchange_name:
-            st.error("Please provide both the company name and exchange name.")
+        if not company_name:
+            st.error("Please provide the company name.")
             return
 
-        # Resolve stock symbol and exchange code
-        stock_symbol, exchange_code = resolve_company_and_exchange(company_name, exchange_name)
         if not stock_symbol or not exchange_code:
             st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
             return
 
-        # Start the background scheduler
-        st.info(f"Starting real-time tracking for {company_name} ({stock_symbol}) on {exchange_name}...")
-        start_background_scheduler(stock_symbol, exchange_code)
+        # Fetch initial data
+        st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
+        fetch_and_update_data(stock_symbol, exchange_code)
 
-    # Real-time UI to display the latest data
-    st.subheader("Real-Time Financial Data")
-    while True:
-        if latest_data["financial_data"]:
-            st.write("Latest Financial Data:")
-            st.json(latest_data["financial_data"])
-        else:
-            st.info("No financial data available yet.")
+    # Button to refresh data
+    if st.button("Refresh Data"):
+        if not company_name:
+            st.error("Please provide the company name.")
+            return
 
-        if latest_data["news"]:
-            st.write("Latest News:")
-            for news_item in latest_data["news"]:
-                st.markdown(f"- [{news_item['title']}]({news_item['link']})")
-        else:
-            st.info("No news available yet.")
+        if not stock_symbol or not exchange_code:
+            st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
+            return
 
-        time.sleep(5)  # Refresh every 5 seconds
+        # Fetch updated data
+        st.info(f"Refreshing data for {company_name} ({stock_symbol}) on {exchange_code}...")
+        fetch_and_update_data(stock_symbol, exchange_code)
+
+    # Display the latest data
+    st.subheader("Latest Financial Data")
+    if latest_data["financial_data"]:
+        st.json(latest_data["financial_data"])
+    else:
+        st.info("No financial data available yet.")
+
+    st.subheader("Latest News")
+    if latest_data["news"]:
+        for news_item in latest_data["news"]:
+            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+    else:
+        st.info("No news available yet.")
 
 if __name__ == "__main__":
     main()
+```
