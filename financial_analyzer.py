@@ -686,8 +686,8 @@ def scrape_yahoo_finance(stock_symbol):
         # Extract relevant news
         news = []
         try:
-            # Attempt to find news items using BeautifulSoup
-            news_items = soup.find_all("a", {"data-test": "quote-news-headlines"})  # Adjusted selector
+            # Use the updated selector based on browser testing
+            news_items = soup.select('a[data-test="quote-news-headlines"]')  # Updated selector
             logging.info(f"News items found: {len(news_items)}")
             for item in news_items:
                 title = item.text.strip()
