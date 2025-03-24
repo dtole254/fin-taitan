@@ -22,6 +22,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import os  # For environment variable management
+import threading  # For running background tasks
+import schedule  # For periodic tasks
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -925,118 +927,109 @@ def resolve_company_and_exchange(company_name, exchange_name):
         logging.error(f"Exchange name '{exchange_name}' not found in the mapping.")
     return stock_symbol, exchange_code
 
-def main():
-    st.title("Financial Analyzer App")
-    st.write("Analyze financial data of companies.")
+# Global variable to store the latest data
+latest_data = {"financial_data": {}, "news": []}
 
-    # Input fields for company name, exchange name, and company URL
+def fetch_and_update_data(stock_symbol, exchange_code=None):
+    """
+    Fetches and updates the latest financial data and news for a given stock symbol.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "AAPL").
+        exchange_code (str, optional): The exchange code (e.g., "NASDAQ"). Defaults to None.
+    """
+    global latest_data
+    logging.info(f"Fetching new data for {stock_symbol}...")
+    new_data = aggregate_data(stock_symbol, exchange_code)
+    if new_data:
+        if detect_changes(latest_data, new_data):
+            logging.info("New data detected. Updating...")
+            latest_data = new_data
+        else:
+            logging.info("No changes detected in the data.")
+    else:
+        logging.warning(f"Failed to fetch new data for {stock_symbol}.")
+
+def detect_changes(old_data, new_data):
+    """
+    Detects changes between old and new data using hashing.
+
+    Args:
+        old_data (dict): The previously stored data.
+        new_data (dict): The newly fetched data.
+
+    Returns:
+        bool: True if changes are detected, False otherwise.
+    """
+    import hashlib
+    old_hash = hashlib.md5(json.dumps(old_data, sort_keys=True).encode()).hexdigest()
+    new_hash = hashlib.md5(json.dumps(new_data, sort_keys=True).encode()).hexdigest()
+    return old_hash != new_hash
+
+def run_scheduler(stock_symbol, exchange_code=None):
+    """
+    Runs the scheduler to periodically fetch and update data.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "AAPL").
+        exchange_code (str, optional): The exchange code (e.g., "NASDAQ"). Defaults to None.
+    """
+    schedule.every(10).seconds.do(fetch_and_update_data, stock_symbol, exchange_code)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+def start_background_scheduler(stock_symbol, exchange_code=None):
+    """
+    Starts the scheduler in a separate thread.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., "AAPL").
+        exchange_code (str, optional): The exchange code (e.g., "NASDAQ"). Defaults to None.
+    """
+    scheduler_thread = threading.Thread(target=run_scheduler, args=(stock_symbol, exchange_code), daemon=True)
+    scheduler_thread.start()
+
+def main():
+    st.title("Real-Time Financial Analyzer App")
+    st.write("Analyze and track financial data of companies in real time.")
+
+    # Input fields for company name and exchange name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
     exchange_name = st.text_input("Enter the exchange name (e.g., 'NASDAQ', 'Nairobi Stock Exchange'):")
-    company_url = st.text_input("Enter the company's financial data URL (optional):")
 
-    # File uploader for CSV, Excel, PDF, and image files
-    uploaded_file = st.file_uploader("Upload a financial data file (CSV, Excel, PDF, or Image):", type=["csv", "xlsx", "pdf", "png", "jpg", "jpeg"])
-
-    if st.button("Analyze"):
-        if not company_name and not uploaded_file and not company_url:
-            st.error("Please provide either the company name, exchange name, company URL, or upload a file.")
+    if st.button("Start Tracking"):
+        if not company_name or not exchange_name:
+            st.error("Please provide both the company name and exchange name.")
             return
 
-        try:
-            financial_data = None
+        # Resolve stock symbol and exchange code
+        stock_symbol, exchange_code = resolve_company_and_exchange(company_name, exchange_name)
+        if not stock_symbol or not exchange_code:
+            st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
+            return
 
-            # Handle uploaded files
-            if uploaded_file:
-                if uploaded_file.name.endswith(".csv"):
-                    financial_data = pd.read_csv(uploaded_file)
-                elif uploaded_file.name.endswith(".xlsx"):
-                    financial_data = pd.read_excel(uploaded_file)
-                elif uploaded_file.name.endswith(".pdf"):
-                    # Convert PDF to CSV
-                    st.info("Converting PDF to CSV for efficient data extraction...")
-                    csv_path = convert_pdf_to_csv(uploaded_file)
-                    if csv_path:
-                        st.success(f"PDF successfully converted to CSV: {csv_path}")
-                        with open(csv_path, "rb") as f:
-                            st.download_button(
-                                label="Download Extracted CSV",
-                                data=f,
-                                file_name="extracted_data.csv",
-                                mime="text/csv"
-                            )
-                        financial_data = pd.read_csv(csv_path)
-                        st.write("Extracted Data from PDF (as CSV):")
-                        st.dataframe(financial_data)
-                    else:
-                        st.error("No data could be extracted from the PDF. Please ensure the data is structured.")
-                elif uploaded_file.name.endswith((".png", ".jpg", ".jpeg")):
-                    # Extract text from image
-                    st.info("Extracting text from image...")
-                    extracted_text = extract_text_from_image(uploaded_file)
-                    if extracted_text:
-                        st.write("Extracted Text from Image:")
-                        st.text(extracted_text)
-                        financial_data = process_extracted_text_to_dataframe(extracted_text)
-                        if financial_data is not None and not financial_data.empty:
-                            st.write("Structured Data from Image:")
-                            st.dataframe(financial_data)
-                        else:
-                            st.error("Failed to structure data from the extracted text. Please ensure the image contains readable financial data.")
-                    else:
-                        st.error("Failed to extract text from the image. Please ensure the image is clear and contains readable text.")
+        # Start the background scheduler
+        st.info(f"Starting real-time tracking for {company_name} ({stock_symbol}) on {exchange_name}...")
+        start_background_scheduler(stock_symbol, exchange_code)
 
-            # Resolve stock symbol and exchange code
-            stock_symbol, exchange_code = resolve_company_and_exchange(company_name, exchange_name)
-            if not stock_symbol and not company_url:
-                st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
-                return
+    # Real-time UI to display the latest data
+    st.subheader("Real-Time Financial Data")
+    while True:
+        if latest_data["financial_data"]:
+            st.write("Latest Financial Data:")
+            st.json(latest_data["financial_data"])
+        else:
+            st.info("No financial data available yet.")
 
-            # Handle scraping if no file is uploaded
-            if not financial_data:
-                if company_url:
-                    st.info(f"Scraping financial data from the provided URL: {company_url}...")
-                    analyzer = FinancialAnalyzer(company_name=company_name, website_url=company_url)
-                    financial_data = analyzer.scrape_financial_data()
-                    if financial_data is not None:
-                        with st.expander("Scraped Financial Data"):
-                            st.dataframe(financial_data)
-                    else:
-                        st.error("Failed to scrape financial data from the provided URL.")
-                elif stock_symbol:
-                    st.info(f"Scraping financial data and news for {company_name} ({stock_symbol}) from {exchange_name}...")
-                    aggregated_data = aggregate_data(stock_symbol, exchange_code)
-                    if aggregated_data:
-                        with st.expander("Aggregated Financial Data"):
-                            st.json(aggregated_data.get("financial_data", {}))
+        if latest_data["news"]:
+            st.write("Latest News:")
+            for news_item in latest_data["news"]:
+                st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+        else:
+            st.info("No news available yet.")
 
-                        with st.expander("Relevant News"):
-                            news_items = aggregated_data.get("news", [])
-                            if news_items:
-                                for news_item in news_items:
-                                    st.markdown(f"- [{news_item['title']}]({news_item['link']})")
-                            else:
-                                st.info("No relevant news found for this company.")
-                    else:
-                        st.error(f"Failed to scrape financial data or news for {company_name}. Please try again later.")
-
-            # Display and analyze financial data
-            if financial_data is not None and not financial_data.empty:
-                with st.expander("Financial Data"):
-                    st.dataframe(financial_data)
-
-                with st.expander("Calculated Financial Ratios"):
-                    analyzer = FinancialAnalyzer(company_name=stock_symbol, financial_data=financial_data)
-                    ratios = analyzer.calculate_ratios()
-                    if ratios:
-                        st.json(ratios)
-                    else:
-                        st.warning("Could not calculate financial ratios. Check the data format.")
-            else:
-                st.error("Failed to process financial data. Check the file or URL.")
-
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
-            logging.error(f"An unexpected error occurred: {e}")
+        time.sleep(5)  # Refresh every 5 seconds
 
 if __name__ == "__main__":
     main()
