@@ -43,7 +43,9 @@ DEFAULT_CONFIG = {
     "scraping_timeout": 10,
     "news_api_key": None,  # Add default value for news API key
     "alpha_vantage_api_key": None,  # Add default value for Alpha Vantage API
-    "enable_selenium": False  # Add default value for Selenium
+    "enable_selenium": False,  # Add default value for selenium
+    "news_source": "NewsAPI",  # Default news source.
+    "finnhub_api_key": None,  # Add default value for Finnhub API Key
 }
 
 if args.config_file:
@@ -52,7 +54,7 @@ if args.config_file:
             config = json.load(config_file)
             if not isinstance(config, dict):
                 raise ValueError("Configuration file must contain a JSON object.")
-            
+
             USER_AGENT = config.get("user_agent", DEFAULT_CONFIG["user_agent"])
             MAX_RETRIES = config.get("max_retries", DEFAULT_CONFIG["max_retries"])
             RETRY_DELAY = config.get("retry_delay", DEFAULT_CONFIG["retry_delay"])
@@ -61,6 +63,8 @@ if args.config_file:
             NEWS_API_KEY = config.get("news_api_key", DEFAULT_CONFIG["news_api_key"])  # Load news API key
             ALPHA_VANTAGE_API_KEY = config.get("alpha_vantage_api_key", DEFAULT_CONFIG["alpha_vantage_api_key"])  # Load Alpha Vantage API Key
             ENABLE_SELENIUM = config.get("enable_selenium", DEFAULT_CONFIG["enable_selenium"])
+            NEWS_SOURCE = config.get("news_source", DEFAULT_CONFIG["news_source"])
+            FINNHUB_API_KEY = config.get("finnhub_api_key", DEFAULT_CONFIG["finnhub_api_key"])
             if not isinstance(MAX_RETRIES, int) or MAX_RETRIES <= 0:
                 raise ValueError("max_retries must be a positive integer.")
             if not isinstance(RETRY_DELAY, (int, float)) or RETRY_DELAY < 0:
@@ -71,6 +75,8 @@ if args.config_file:
                 raise ValueError("scraping_timeout must be a positive number.")
             if not isinstance(ENABLE_SELENIUM, bool):
                 raise ValueError("enable_selenium must be a boolean.")
+            if NEWS_SOURCE not in ["NewsAPI", "Finnhub"]:
+                raise ValueError("news_source must be either 'NewsAPI' or 'Finnhub'.")
     except Exception as e:
         logging.warning(f"Failed to load or validate configuration file {args.config_file}: {e}")
         USER_AGENT = DEFAULT_CONFIG["user_agent"]
@@ -81,6 +87,9 @@ if args.config_file:
         NEWS_API_KEY = DEFAULT_CONFIG["news_api_key"]  # Use default
         ALPHA_VANTAGE_API_KEY = DEFAULT_CONFIG["alpha_vantage_api_key"]
         ENABLE_SELENIUM = DEFAULT_CONFIG["enable_selenium"]
+        NEWS_SOURCE = DEFAULT_CONFIG["news_source"]
+        FINNHUB_API_KEY = DEFAULT_CONFIG["finnhub_api_key"]
+
 else:
     USER_AGENT = DEFAULT_CONFIG["user_agent"]
     MAX_RETRIES = DEFAULT_CONFIG["max_retries"]
@@ -90,6 +99,8 @@ else:
     NEWS_API_KEY = DEFAULT_CONFIG["news_api_key"]  # Use default
     ALPHA_VANTAGE_API_KEY = DEFAULT_CONFIG["alpha_vantage_api_key"]
     ENABLE_SELENIUM = DEFAULT_CONFIG["enable_selenium"]
+    NEWS_SOURCE = DEFAULT_CONFIG["news_source"]
+    FINNHUB_API_KEY = DEFAULT_CONFIG["finnhub_api_key"]
 
 # Validate command-line arguments
 if MAX_RETRIES <= 0:
@@ -939,17 +950,6 @@ def rate_limit():
 
 def scrape_cnbc_africa(company_name):
     """
-    Scrapes financial news from CNBC Africa for the specified company.
-
-    Args:
-        company_name (str): The name of the company.
-
-    Returns:
-        dict: A dictionary containing relevant news.
-    """
-    try:
-        base_url = "https://www.cnbcafrica.com/search/"
-        params = {"q": company_name}
         headers = {"User-Agent": USER_AGENT}
         response = requests.get(base_url, headers=headers, params=params)
         response.raise_for_status()
