@@ -8,3 +8,4 @@ pytesseract
 pillow
 selenium
 webdriver-manager
+schedule
