@@ -503,7 +503,7 @@ class FinancialAnalyzer:
                 missing_columns.append("Current Assets")
             if not current_liabilities_col:
                 missing_columns.append("Current Liabilities")
-            if not total_equity_col:
+if not total_equity_col:
                 missing_columns.append("Total Equity")
             if not cash_col:
                 missing_columns.append("Cash")
@@ -928,14 +928,24 @@ def main():
                 ratios = analyzer.calculate_ratios()
                 if ratios:
                     st.subheader("Financial Ratios:")
-                    st.write(ratios)
+                    # Display formulas and values
+                    st.write(f"Gross Profit Margin: (Revenue - Cost of Goods Sold) / Revenue = {ratios.get('gross_profit_margin', 'N/A')}")
+                    st.write(f"Net Profit Margin: Net Income / Revenue = {ratios.get('net_profit_margin', 'N/A')}")
+                    st.write(f"Return on Assets: Net Income / Total Assets = {ratios.get('return_on_assets', 'N/A')}")
+                    st.write(f"Return on Equity: Net Income / Total Equity = {ratios.get('return_on_equity', 'N/A')}")
+                    st.write(f"Debt to Equity Ratio: Total Liabilities / Total Equity = {ratios.get('debt_to_equity_ratio', 'N/A')}")
+                    st.write(f"Current Ratio: Current Assets / Current Liabilities = {ratios.get('current_ratio', 'N/A')}")
+                    st.write(f"Quick Ratio: (Current Assets - Inventory) / Current Liabilities = {ratios.get('quick_ratio', 'N/A')}")
+                    st.write(f"Cash Ratio: Cash / Current Liabilities = {ratios.get('cash_ratio', 'N/A')}")
+                    st.write(f"Inventory Turnover: Cost of Goods Sold / Inventory = {ratios.get('inventory_turnover', 'N/A')}")
+                    st.write(f"Asset Turnover: Revenue / Total Assets = {ratios.get('asset_turnover', 'N/A')}")
 
                     analysis = analyzer.analyze_financial_health(ratios)
                     if analysis:
                         st.subheader("Financial Health Analysis:")
                         st.write(analysis)
                 else:
-                    st.error("Could not calculate financial ratios.")
+                    st.error("Could not calculate financial ratios.  Please ensure the data includes Revenue, Net Income, Total Assets, and Total Liabilities.")
             elif not website_url and not uploaded_file: # Make sure we only show this error when no data source is provided
                 st.error("Could not retrieve financial data. Please provide a website URL or upload a file.")
 
