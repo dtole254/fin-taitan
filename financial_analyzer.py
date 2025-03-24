@@ -349,17 +349,18 @@ class FinancialAnalyzer:
             # Calculate financial ratios
             ratios = {}
 
-            def format_number(value):
+            def format_number(value, currency="USD"):
                 """
-                Formats a number with commas and two decimal places.
+                Formats a number with commas, two decimal places, and a currency type.
 
                 Args:
                     value (float): The number to format.
+                    currency (str): The currency type (e.g., "USD", "EUR").
 
                 Returns:
-                    str: The formatted number as a string.
+                    str: The formatted number as a string with currency.
                 """
-                return f"{value:,.2f}" if value is not None else "N/A"
+                return f"{currency} {value:,.2f}" if value is not None else "N/A"
 
             if revenue_col and net_income_col:
                 revenue = pd.to_numeric(data[revenue_col], errors='coerce').iloc[-1]
@@ -1380,16 +1381,20 @@ def analyze_financial_health(ratios):
         logging.error(f"Error analyzing financial health: {e}")
     return analysis
 
-def display_table(data, title):
+def display_table(data, title, currency="USD"):
     """
     Displays data in a table format with clear borders using Streamlit.
 
     Args:
         data (dict or pd.DataFrame): The data to display.
         title (str): The title of the table.
+        currency (str): The currency type for formatting amounts.
     """
     st.subheader(title)
     if isinstance(data, pd.DataFrame):
+        # Format numeric values with currency
+        for col in data.select_dtypes(include=["number"]).columns:
+            data[col] = data[col].apply(lambda x: format_number(x, currency))
         st.dataframe(data.style.set_table_styles(
             [{'selector': 'th', 'props': [('border', '1px solid black')]},
              {'selector': 'td', 'props': [('border', '1px solid black')]}]
@@ -1403,12 +1408,13 @@ def display_table(data, title):
     else:
         st.write("No data available to display.")
 
-def calculate_ratios_with_standards(financial_data):
+def calculate_ratios_with_standards(financial_data, currency="USD"):
     """
     Calculates financial ratios and compares them with industry standards.
 
     Args:
         financial_data (pd.DataFrame): The financial data to calculate ratios from.
+        currency (str): The currency type for formatting amounts.
 
     Returns:
         pd.DataFrame: A DataFrame containing the ratios, their values, industry standards, and explanations.
@@ -1470,6 +1476,11 @@ def calculate_ratios_with_standards(financial_data):
                 "Industry Standard": "1.5-2.0",
                 "Explanation": "Indicates the company's ability to pay short-term obligations."
             })
+
+        # Add currency to financial data
+        for ratio in ratios:
+            if "Value" in ratio and ratio["Value"] != "N/A" and "%" not in ratio["Value"]:
+                ratio["Value"] = format_number(float(ratio["Value"].replace(",", "")), currency)
 
         return pd.DataFrame(ratios)
     except Exception as e:
@@ -1587,7 +1598,7 @@ def main():
                 st.success("Structured data (table) extracted from PDF.")
             else:
                 unstructured_data_df = extract_unstructured_pdf_data(uploaded_file)
-                if unstructured_data_df is not None and not unstructured_data_df.empty:
+                if unstructured_data_df is not None and not unstructured_data_df.empty():
                     financial_data = unstructured_data_df
                     st.success("Unstructured data extracted from PDF.")
                 else:
@@ -1704,3 +1715,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
