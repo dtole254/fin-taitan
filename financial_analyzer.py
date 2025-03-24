@@ -24,6 +24,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import os  # For environment variable management
 import threading  # For running background tasks
 import schedule  # For periodic tasks
+from concurrent.futures import ThreadPoolExecutor, as_completed  # For parallel execution
 
 # Parse command-line arguments for configuration
 parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
@@ -39,7 +40,10 @@ DEFAULT_CONFIG = {
     "max_retries": 3,
     "retry_delay": 5,
     "robots_timeout": 5,
-    "scraping_timeout": 10
+    "scraping_timeout": 10,
+    "news_api_key": None,  # Add default value for news API key
+    "alpha_vantage_api_key": None,  # Add default value for Alpha Vantage API
+    "enable_selenium": False  # Add default value for Selenium
 }
 
 if args.config_file:
@@ -54,6 +58,9 @@ if args.config_file:
             RETRY_DELAY = config.get("retry_delay", DEFAULT_CONFIG["retry_delay"])
             ROBOTS_TIMEOUT = config.get("robots_timeout", DEFAULT_CONFIG["robots_timeout"])
             SCRAPING_TIMEOUT = config.get("scraping_timeout", DEFAULT_CONFIG["scraping_timeout"])
+            NEWS_API_KEY = config.get("news_api_key", DEFAULT_CONFIG["news_api_key"])  # Load news API key
+            ALPHA_VANTAGE_API_KEY = config.get("alpha_vantage_api_key", DEFAULT_CONFIG["alpha_vantage_api_key"])  # Load Alpha Vantage API Key
+            ENABLE_SELENIUM = config.get("enable_selenium", DEFAULT_CONFIG["enable_selenium"])
             if not isinstance(MAX_RETRIES, int) or MAX_RETRIES <= 0:
                 raise ValueError("max_retries must be a positive integer.")
             if not isinstance(RETRY_DELAY, (int, float)) or RETRY_DELAY < 0:
@@ -62,6 +69,8 @@ if args.config_file:
                 raise ValueError("robots_timeout must be a positive number.")
             if not isinstance(SCRAPING_TIMEOUT, (int, float)) or SCRAPING_TIMEOUT <= 0:
                 raise ValueError("scraping_timeout must be a positive number.")
+            if not isinstance(ENABLE_SELENIUM, bool):
+                raise ValueError("enable_selenium must be a boolean.")
     except Exception as e:
         logging.warning(f"Failed to load or validate configuration file {args.config_file}: {e}")
         USER_AGENT = DEFAULT_CONFIG["user_agent"]
@@ -69,12 +78,18 @@ if args.config_file:
         RETRY_DELAY = DEFAULT_CONFIG["retry_delay"]
         ROBOTS_TIMEOUT = DEFAULT_CONFIG["robots_timeout"]
         SCRAPING_TIMEOUT = DEFAULT_CONFIG["scraping_timeout"]
+        NEWS_API_KEY = DEFAULT_CONFIG["news_api_key"]  # Use default
+        ALPHA_VANTAGE_API_KEY = DEFAULT_CONFIG["alpha_vantage_api_key"]
+        ENABLE_SELENIUM = DEFAULT_CONFIG["enable_selenium"]
 else:
     USER_AGENT = DEFAULT_CONFIG["user_agent"]
     MAX_RETRIES = DEFAULT_CONFIG["max_retries"]
     RETRY_DELAY = DEFAULT_CONFIG["retry_delay"]
     ROBOTS_TIMEOUT = DEFAULT_CONFIG["robots_timeout"]
     SCRAPING_TIMEOUT = DEFAULT_CONFIG["scraping_timeout"]
+    NEWS_API_KEY = DEFAULT_CONFIG["news_api_key"]  # Use default
+    ALPHA_VANTAGE_API_KEY = DEFAULT_CONFIG["alpha_vantage_api_key"]
+    ENABLE_SELENIUM = DEFAULT_CONFIG["enable_selenium"]
 
 # Validate command-line arguments
 if MAX_RETRIES <= 0:
