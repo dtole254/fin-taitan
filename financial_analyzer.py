@@ -2034,4 +2034,86 @@ def load_financial_data(self, file):
         st.error("Uploaded financial data is invalid.")
         logging.error("Uploaded financial data is invalid.")
         self.financial_data = None
-```
+
+def _fetch_world_indices_alpha_vantage(self):
+    """Fetches world indices using Alpha Vantage."""
+    if not ALPHA_VANTAGE_API_KEY:
+        logging.warning("Alpha Vantage API key is missing. World indices fetching will be skipped.")
+        return
+
+    indices = {
+        "S&P 500": "SPX",
+        "Dow Jones": "DJI",
+        "Nasdaq": "IXIC",
+        "FTSE 100": "FTSE",
+        "Nikkei 225": "N225",
+        "Hang Seng": "HSI",
+        "Euro Stoxx 50": "STOXX50E"
+    }
+
+    for name, symbol in indices.items():
+        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHA_VANTAGE_API_KEY}"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if "Global Quote" in data and "05. price" in data["Global Quote"]:
+                self.indices_data[name] = float(data["Global Quote"]["05. price"])
+            else:
+                logging.warning(f"Alpha Vantage: No data found for index {name}.")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching index {name} from Alpha Vantage: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while fetching index {name}: {e}")
+
+def _fetch_world_indices_rapidapi(self):
+    """Fetches world indices using RapidAPI."""
+    if not RAPIDAPI_KEY:
+        logging.warning("RapidAPI key is missing. World indices fetching will be skipped.")
+        return
+
+    url = "https://global-stock-market-indices.p.rapidapi.com/major_indices"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": "global-stock-market-indices.p.rapidapi.com"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        for index in data.get("indices", []):
+            name = index.get("name")
+            price = index.get("price")
+            if name and price:
+                self.indices_data[name] = float(price)
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching world indices from RapidAPI: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while fetching world indices: {e}")
+
+def fetch_world_indices(self):
+    """
+    Fetches major world indices data using the configured API.
+    """
+    self.indices_data.clear()  # Clear stale data
+    if WORLD_INDICES_API == "AlphaVantage":
+        self._fetch_world_indices_alpha_vantage()
+    elif WORLD_INDICES_API == "RapidAPI":
+        self._fetch_world_indices_rapidapi()
+    else:
+        logging.error(f"Invalid world indices API: {WORLD_INDICES_API}")
+
+def display_world_indices(self):
+    """
+    Displays the fetched world indices in the Streamlit app.
+    """
+    if not self.indices_data:
+        st.warning("No world indices data available.")
+        return
+
+    st.subheader("Major World Indices")
+    indices_df = pd.DataFrame(list(self.indices_data.items()), columns=["Index", "Price"])
+    st.dataframe(indices_df)
+
+# ...existing code...
