@@ -1698,9 +1698,12 @@ def main():
         st.info("No financial data available yet.")
 
     st.subheader("Last Known News")
-    if latest_data["news"]:
+    if latest_data.get("news") and isinstance(latest_data["news"], list):
         news_df = pd.DataFrame(latest_data["news"])
-        display_table(news_df, "Last Known News")
+        if not news_df.empty:
+            display_table(news_df, "Last Known News")
+        else:
+            st.info("No news available yet.")
     else:
         st.info("No news available yet.")
 
