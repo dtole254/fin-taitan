@@ -1101,12 +1101,235 @@ def fetch_finnhub_news(stock_symbol):
         logging.error(f"Error fetching news from Finnhub for {stock_symbol}: {e}")
         return []
 
+def fetch_robots_txt(robots_url, timeout=5):
+    """
+    Fetches and parses the robots.txt file.
+
+    Args:
+        robots_url (str): The URL of the robots.txt file.
+        timeout (int): Timeout for fetching the robots.txt file.
+
+    Returns:
+        RobotFileParser: A parsed RobotFileParser object, or None if an error occurs.
+    """
+    rp = RobotFileParser()
+    rp.set_url(robots_url)
+    try:
+        rp.read()
+        return rp
+    except Exception as e:
+        logging.warning(f"Could not fetch or parse robots.txt at {robots_url}: {e}")
+        return None
+
+def scrape_financial_data_with_retries(url, retries=3, delay=5):
+    """
+    Scrapes financial data from a URL with retries and rate limiting.
+
+    Args:
+        url (str): The URL to scrape.
+        retries (int): Number of retry attempts.
+        delay (int): Delay between retries in seconds.
+
+    Returns:
+        BeautifulSoup: Parsed HTML content, or None if scraping fails.
+    """
+    for attempt in range(retries):
+        try:
+            headers = {"User-Agent": USER_AGENT}
+            response = requests.get(url, headers=headers, timeout=SCRAPING_TIMEOUT)
+            response.raise_for_status()
+            return BeautifulSoup(response.text, "html.parser")
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 429:  # Too Many Requests
+                logging.warning(f"HTTP 429 Too Many Requests. Retrying in {delay} seconds... (Attempt {attempt + 1}/{retries})")
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+            else:
+                logging.error(f"HTTP error occurred: {e}")
+                break
+        except Exception as e:
+            logging.error(f"Error during scraping: {e}")
+            break
+    return None
+
+def fetch_news_with_api(company_name):
+    """
+    Fetches the latest news about a company using the News API.
+
+    Args:
+        company_name (str): The name of the company.
+
+    Returns:
+        list: A list of news articles, or an empty list if no news is found.
+    """
+    if not NEWS_API_KEY:
+        logging.warning("News API key is missing. Skipping news fetching.")
+        return []
+
+    url = f"https://newsapi.org/v2/everything?q={urllib.parse.quote_plus(company_name)}&sortBy=publishedAt&apiKey={NEWS_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        articles = response.json().get("articles", [])
+        return [{"title": article["title"], "url": article["url"]} for article in articles]
+    except Exception as e:
+        logging.error(f"Error fetching news for {company_name}: {e}")
+        return []
+
+def analyze_financial_health(ratios):
+    """
+    Analyzes the financial health of a company based on calculated ratios.
+
+    Args:
+        ratios (dict): A dictionary of financial ratios.
+
+    Returns:
+        dict: A dictionary containing the financial health analysis.
+    """
+    analysis = {}
+    try:
+        if "Profit Margin" in ratios:
+            profit_margin = float(ratios["Profit Margin"].replace(",", "").replace("%", ""))
+            analysis["Profitability"] = "High" if profit_margin > 20 else "Moderate" if profit_margin > 10 else "Low"
+
+        if "Debt-to-Equity Ratio" in ratios:
+            debt_to_equity = float(ratios["Debt-to-Equity Ratio"].replace(",", "").replace("%", ""))
+            analysis["Leverage"] = "Low" if debt_to_equity < 50 else "Moderate" if debt_to_equity < 100 else "High"
+
+        if "Current Ratio" in ratios:
+            current_ratio = float(ratios["Current Ratio"].replace(",", ""))
+            analysis["Liquidity"] = "High" if current_ratio > 2 else "Moderate" if current_ratio > 1.5 else "Low"
+    except Exception as e:
+        logging.error(f"Error analyzing financial health: {e}")
+    return analysis
+
+def display_table(data, title):
+    """
+    Displays data in a table format with clear borders using Streamlit.
+
+    Args:
+        data (dict or pd.DataFrame): The data to display.
+        title (str): The title of the table.
+    """
+    st.subheader(title)
+    if isinstance(data, pd.DataFrame):
+        st.dataframe(data.style.set_table_styles(
+            [{'selector': 'th', 'props': [('border', '1px solid black')]},
+             {'selector': 'td', 'props': [('border', '1px solid black')]}]
+        ))
+    elif isinstance(data, dict):
+        df = pd.DataFrame(list(data.items()), columns=["Metric", "Value"])
+        st.dataframe(df.style.set_table_styles(
+            [{'selector': 'th', 'props': [('border', '1px solid black')]},
+             {'selector': 'td', 'props': [('border', '1px solid black')]}]
+        ))
+    else:
+        st.write("No data available to display.")
+
+def calculate_ratios_with_standards(financial_data):
+    """
+    Calculates financial ratios and compares them with industry standards.
+
+    Args:
+        financial_data (pd.DataFrame): The financial data to calculate ratios from.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the ratios, their values, industry standards, and explanations.
+    """
+    ratios = []
+    try:
+        # Example calculations (ensure columns exist in financial_data)
+        revenue_col = "Revenue"
+        net_income_col = "Net Income"
+        total_assets_col = "Total Assets"
+        total_liabilities_col = "Total Liabilities"
+        current_assets_col = "Current Assets"
+        current_liabilities_col = "Current Liabilities"
+        total_equity_col = "Total Equity"
+
+        # Profit Margin
+        if revenue_col in financial_data and net_income_col in financial_data:
+            revenue = pd.to_numeric(financial_data[revenue_col], errors='coerce').iloc[-1]
+            net_income = pd.to_numeric(financial_data[net_income_col], errors='coerce').iloc[-1]
+            profit_margin = (net_income / revenue * 100) if revenue != 0 else None
+            ratios.append({
+                "Metric": "Profit Margin",
+                "Value": f"{profit_margin:,.2f}%" if profit_margin is not None else "N/A",
+                "Industry Standard": "10-20%",
+                "Explanation": "Indicates the percentage of revenue that turns into profit."
+            })
+
+        # Debt-to-Equity Ratio
+        if total_liabilities_col in financial_data and total_equity_col in financial_data:
+            total_liabilities = pd.to_numeric(financial_data[total_liabilities_col], errors='coerce').iloc[-1]
+            total_equity = pd.to_numeric(financial_data[total_equity_col], errors='coerce').iloc[-1]
+            debt_to_equity = (total_liabilities / total_equity) if total_equity != 0 else None
+            ratios.append({
+                "Metric": "Debt-to-Equity Ratio",
+                "Value": f"{debt_to_equity:,.2f}" if debt_to_equity is not None else "N/A",
+                "Industry Standard": "1.0-2.0",
+                "Explanation": "Measures the company's financial leverage."
+            })
+
+        # Current Ratio
+        if current_assets_col in financial_data and current_liabilities_col in financial_data:
+            current_assets = pd.to_numeric(financial_data[current_assets_col], errors='coerce').iloc[-1]
+            current_liabilities = pd.to_numeric(financial_data[current_liabilities_col], errors='coerce').iloc[-1]
+            current_ratio = (current_assets / current_liabilities) if current_liabilities != 0 else None
+            ratios.append({
+                "Metric": "Current Ratio",
+                "Value": f"{current_ratio:,.2f}" if current_ratio is not None else "N/A",
+                "Industry Standard": "1.5-2.0",
+                "Explanation": "Indicates the company's ability to pay short-term obligations."
+            })
+
+        # Return on Assets (ROA)
+        if net_income_col in financial_data and total_assets_col in financial_data:
+            net_income = pd.to_numeric(financial_data[net_income_col], errors='coerce').iloc[-1]
+            total_assets = pd.to_numeric(financial_data[total_assets_col], errors='coerce').iloc[-1]
+            roa = (net_income / total_assets * 100) if total_assets != 0 else None
+            ratios.append({
+                "Metric": "Return on Assets (ROA)",
+                "Value": f"{roa:,.2f}%" if roa is not None else "N/A",
+                "Industry Standard": "5-10%",
+                "Explanation": "Shows how efficiently the company uses its assets to generate profit."
+            })
+
+        # Return on Equity (ROE)
+        if net_income_col in financial_data and total_equity_col in financial_data:
+            net_income = pd.to_numeric(financial_data[net_income_col], errors='coerce').iloc[-1]
+            total_equity = pd.to_numeric(financial_data[total_equity_col], errors='coerce').iloc[-1]
+            roe = (net_income / total_equity * 100) if total_equity != 0 else None
+            ratios.append({
+                "Metric": "Return on Equity (ROE)",
+                "Value": f"{roe:,.2f}%" if roe is not None else "N/A",
+                "Industry Standard": "10-15%",
+                "Explanation": "Measures the return generated on shareholders' equity."
+            })
+
+        return pd.DataFrame(ratios)
+    except Exception as e:
+        logging.error(f"Error calculating ratios: {e}")
+        return pd.DataFrame(ratios)
+
 def main():
+    """
+    Main function to run the Streamlit application.
+    """
     st.title("Real-Time Financial Analyzer App")
     st.write("Analyze and track financial data of companies in real time.")
 
     # Input field for company name
     company_name = st.text_input("Enter the company name (e.g., 'NVIDIA', 'Apple'):")
+
+
+    # Option to provide a URL for financial statements
+    financial_url = st.text_input("Enter the URL of the company's financial statements (optional):")
+
+    # Option to upload a financial statement file
+    uploaded_file = st.file_uploader(
+        "Upload financial data (PDF, Excel, Image)", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"]
+    )
 
     # Automatically resolve exchange name
     if company_name:
@@ -1118,6 +1341,63 @@ def main():
         elif not exchange_code:
             st.error(f"Could not resolve the exchange code for stock symbol '{stock_symbol}'. Please check the mappings.")
 
+    # Process financial data from URL or uploaded file
+    financial_data = None
+    if financial_url:
+        st.info(f"Fetching financial data from URL: {financial_url}")
+        analyzer = FinancialAnalyzer(company_name, website_url=financial_url)
+        financial_data = analyzer.scrape_financial_data()
+        if financial_data is not None:
+            st.success("Financial data successfully fetched from the URL.")
+        else:
+            st.error("Failed to fetch financial data from the URL.")
+
+    if uploaded_file:
+        file_extension = uploaded_file.name.split(".")[-1].lower()
+        if file_extension == "pdf":
+            structured_data_df = extract_structured_pdf_data(uploaded_file)
+            if structured_data_df is not None and not structured_data_df.empty:
+                financial_data = structured_data_df
+                st.success("Structured data (table) extracted from PDF.")
+            else:
+                unstructured_data_df = extract_unstructured_pdf_data(uploaded_file)
+                if unstructured_data_df is not None and not unstructured_data_df.empty):
+                    financial_data = unstructured_data_df
+                    st.success("Unstructured data extracted from PDF.")
+                else:
+                    st.error("Failed to extract data from PDF.")
+        elif file_extension in ["xlsx", "xls"]:
+            try:
+                financial_data = pd.read_excel(uploaded_file)
+                st.success("Data extracted from Excel file.")
+            except Exception as e:
+                st.error(f"Error reading Excel file: {e}")
+                logging.error(f"Error reading Excel file: {e}")
+        elif file_extension in ["png", "jpg", "jpeg"]:
+            image_df = analyze_image_data(uploaded_file)
+            if image_df is not None:
+                financial_data = image_df
+                st.success("Data extracted from image.")
+            else:
+                st.error("Failed to extract data from image.")
+        else:
+            st.error("Unsupported file type. Please upload a PDF, Excel, or image file.")
+
+    # Analyze financial data
+    if st.button("Analyze Financial Data"):
+        if financial_data is not None and not financial_data.empty:
+            ratios_df = calculate_ratios_with_standards(financial_data)
+            if not ratios_df.empty:
+                st.subheader("Financial Ratios with Industry Standards")
+                st.dataframe(ratios_df.style.set_table_styles(
+                    [{'selector': 'th', 'props': [('border', '1px solid black')]},
+                     {'selector': 'td', 'props': [('border', '1px solid black')]}]
+                ))
+            else:
+                st.error("Could not calculate financial ratios.")
+        else:
+            st.warning("No financial data available to analyze. Please provide a URL or upload a file.")
+
     # Button to fetch and display news
     if st.button("Fetch News"):
         if not company_name:
@@ -1128,27 +1408,25 @@ def main():
             st.error("Could not resolve the stock symbol. Please check your inputs.")
             return
 
-        # Fetch news from Finnhub
         st.info(f"Fetching news for {company_name} ({stock_symbol})...")
-        news = fetch_finnhub_news(stock_symbol)
+        news = fetch_news_with_api(company_name)
         if news:
-            st.subheader("Latest News:")
-            for item in news:
-                st.markdown(f"- [{item['title']}]({item['link']})")
+            news_df = pd.DataFrame(news)
+            display_table(news_df, "Latest News")
         else:
             st.warning("No news found.")
 
     # Display the last known data if available
     st.subheader("Last Known Financial Data")
     if latest_data["financial_data"]:
-        st.json(latest_data["financial_data"])
+        display_table(latest_data["financial_data"], "Last Known Financial Data")
     else:
         st.info("No financial data available yet.")
 
     st.subheader("Last Known News")
     if latest_data["news"]:
-        for news_item in latest_data["news"]:
-            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+        news_df = pd.DataFrame(latest_data["news"])
+        display_table(news_df, "Last Known News")
     else:
         st.info("No news available yet.")
 
@@ -1162,7 +1440,6 @@ def main():
             st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
             return
 
-        # Fetch initial data
         st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
         fetch_and_update_data(stock_symbol, exchange_code)
 
@@ -1176,21 +1453,20 @@ def main():
             st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
             return
 
-        # Fetch updated data
         st.info(f"Refreshing data for {company_name} ({stock_symbol}) on {exchange_code}...")
         fetch_and_update_data(stock_symbol, exchange_code)
 
     # Display the latest data
     st.subheader("Latest Financial Data")
     if latest_data["financial_data"]:
-        st.json(latest_data["financial_data"])
+        display_table(latest_data["financial_data"], "Latest Financial Data")
     else:
         st.info("No financial data available yet.")
 
     st.subheader("Latest News")
     if latest_data["news"]:
-        for news_item in latest_data["news"]:
-            st.markdown(f"- [{news_item['title']}]({news_item['link']})")
+        news_df = pd.DataFrame(latest_data["news"])
+        display_table(news_df, "Latest News")
     else:
         st.info("No news available yet.")
 
