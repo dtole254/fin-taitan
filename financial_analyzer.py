@@ -912,7 +912,7 @@ COMPANY_TO_SYMBOL = {
     "apple": "AAPL",
     "kcb group": "KCB",
     "safaricom": "SCOM",
-    # Add more companies as needed
+    # Ensure all relevant companies are included
 }
 
 # Mapping of stock symbols to exchange codes
@@ -921,7 +921,7 @@ STOCK_TO_EXCHANGE = {
     "AAPL": "NASDAQ",
     "KCB": "Nairobi Stock Exchange",
     "SCOM": "Nairobi Stock Exchange",
-    # Add more mappings as needed
+    # Ensure all relevant mappings are included
 }
 
 def resolve_company_and_exchange(company_name):
