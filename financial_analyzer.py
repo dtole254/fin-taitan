@@ -2188,4 +2188,4 @@ if __name__ == "__main__":
         schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
 
     main()
-```
+````
