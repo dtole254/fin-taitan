@@ -1702,9 +1702,6 @@ def main():
     if st.button("Fetch News"):
         fetch_and_display_news(company_name, stock_symbol)
 
-    # Display the last known data
-    display_last_known_data()
-
     # Start tracking
     if st.button("Start Tracking"):
         start_tracking(company_name, stock_symbol, exchange_code)
@@ -1781,22 +1778,6 @@ def fetch_and_display_news(company_name, stock_symbol):
         display_table(news_df, "Latest News")
     else:
         st.warning("No news found.")
-
-def display_last_known_data():
-    st.subheader("Last Known Financial Data")
-    if latest_data["financial_data"]:
-        display_table(latest_data["financial_data"], "Last Known Financial Data")
-    else:
-        st.info("No financial data available yet.")
-    st.subheader("Last Known News")
-    if latest_data.get("news") and isinstance(latest_data["news"], list):
-        news_df = pd.DataFrame(latest_data["news"])
-        if not news_df.empty:
-            display_table(news_df, "Last Known News")
-        else:
-            st.info("No news available yet.")
-    else:
-        st.info("No news available yet.")
 
 def start_tracking(company_name, stock_symbol, exchange_code):
     if not company_name:
@@ -2207,4 +2188,3 @@ if __name__ == "__main__":
         schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
 
     main()
-`
