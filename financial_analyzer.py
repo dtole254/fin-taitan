@@ -1673,28 +1673,25 @@ def main():
 
     # Process financial data from URL or uploaded file
     global latest_data
-    financial_data = None
     if financial_url:
         st.info(f"Fetching financial data from URL: {financial_url}")
         analyzer = FinancialAnalyzer(company_name, website_url=financial_url)
-        financial_data = analyzer.scrape_financial_data()
-        if financial_data is not None:
+        fetched_data = analyzer.scrape_financial_data()
+        if fetched_data is not None:
             st.success("Financial data successfully fetched from the URL.")
-            latest_data["financial_data"] = financial_data.to_dict()
+            latest_data["financial_data"] = fetched_data.to_dict()
         else:
             st.error("Failed to fetch financial data from the URL.")
 
     if file_path:
-        financial_data = process_uploaded_file(file_path, uploaded_file.name)
-        if financial_data is not None:
-            latest_data["financial_data"] = financial_data.to_dict()
+        uploaded_data = process_uploaded_file(file_path, uploaded_file.name)
+        if uploaded_data is not None:
+            latest_data["financial_data"] = uploaded_data.to_dict()
         cleanup_file(file_path)
 
     # Analyze financial data
     if st.button("Analyze Financial Data"):
-        if financial_data is not None and not financial_data.empty:
-            display_ratios(financial_data)
-        elif latest_data.get("financial_data"):
+        if latest_data.get("financial_data"):
             st.info("Analyzing data from 'Latest Financial Data' output.")
             latest_financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
             display_ratios(latest_financial_data_df)
