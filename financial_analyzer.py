@@ -1690,11 +1690,11 @@ def main():
     if st.button("Analyze Financial Data"):
         if financial_data is not None and not financial_data.empty:
             display_ratios(financial_data)
-        elif latest_data["financial_data"]:
-            st.info("Analyzing data from 'Latest Financial Data' output.")
+        elif latest_data.get("financial_data"):
+            st.info("Analyzing data from 'Last Known Financial Data' output.")
             display_ratios(pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"]))
         else:
-            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Latest Financial Data' output.")
+            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Last Known Financial Data' output.")
 
     # Fetch and display news
     if st.button("Fetch News"):
