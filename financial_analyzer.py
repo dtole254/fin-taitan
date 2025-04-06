@@ -1695,8 +1695,12 @@ def main():
             st.info("Analyzing data from 'Latest Financial Data' output.")
             latest_financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
             display_ratios(latest_financial_data_df)
+        elif latest_data.get("tracking_data") and isinstance(latest_data["tracking_data"], dict):
+            st.info("Analyzing data from 'Start Tracking' output.")
+            tracking_data_df = pd.DataFrame.from_dict(latest_data["tracking_data"], orient="index", columns=["Value"])
+            display_ratios(tracking_data_df)
         else:
-            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Latest Financial Data' output.")
+            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Latest Financial Data' or 'Start Tracking' output.")
 
     # Fetch and display news
     if st.button("Fetch News"):
