@@ -1691,7 +1691,7 @@ def main():
 
     # Analyze financial data
     if st.button("Analyze Financial Data"):
-        if latest_data.get("financial_data"):
+        if latest_data.get("financial_data") and isinstance(latest_data["financial_data"], dict):
             st.info("Analyzing data from 'Latest Financial Data' output.")
             latest_financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
             display_ratios(latest_financial_data_df)
@@ -2207,3 +2207,4 @@ if __name__ == "__main__":
         schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
 
     main()
+`
