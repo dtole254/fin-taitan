@@ -1806,17 +1806,28 @@ def start_tracking(company_name, stock_symbol, exchange_code):
     new_data = aggregate_data(stock_symbol, exchange_code)
     if new_data:
         latest_data["tracking_data"] = new_data.get("financial_data", {})
+        logging.debug(f"Tracking data updated: {latest_data['tracking_data']}")  # Log the tracking data
         st.success("Tracking started successfully.")
 
         # Automatically initiate analysis of the financial data
         if latest_data["tracking_data"]:
             st.info("Automatically analyzing the tracked financial data...")
-            tracking_data_df = pd.DataFrame.from_dict(latest_data["tracking_data"], orient="index", columns=["Value"])
-            display_ratios(tracking_data_df)
+            try:
+                tracking_data_df = pd.DataFrame.from_dict(latest_data["tracking_data"], orient="index", columns=["Value"])
+                if not tracking_data_df.empty:
+                    display_ratios(tracking_data_df)
+                else:
+                    st.warning("Tracked financial data is empty. No analysis performed.")
+                    logging.warning("Tracked financial data is empty.")
+            except Exception as e:
+                st.error(f"An error occurred during analysis: {e}")
+                logging.error(f"Error during analysis: {e}")
         else:
             st.warning("No financial data available to analyze after starting tracking.")
+            logging.warning("No financial data available in tracking_data.")
     else:
         st.error("Failed to start tracking. Please try again.")
+        logging.error("Failed to fetch data for tracking.")
 
 def refresh_data(company_name, stock_symbol, exchange_code):
     if not company_name:
