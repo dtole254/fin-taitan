@@ -1659,14 +1659,11 @@ def main():
         "Upload financial data (PDF, Excel, Image)", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"]
     )
 
-    file_path = None  # Initialize file_path to None
-    if uploaded_file:
-        file_path = handle_uploaded_file(uploaded_file)
+    file_path = handle_uploaded_file(uploaded_file) if uploaded_file else None
 
     # Automatically resolve exchange name
-    stock_symbol, exchange_code = None, None
+    stock_symbol, exchange_code = resolve_company_and_exchange(company_name) if company_name else (None, None)
     if company_name:
-        stock_symbol, exchange_code = resolve_company_and_exchange(company_name)
         if stock_symbol and exchange_code:
             st.success(f"Resolved: {company_name} ({stock_symbol}) on {exchange_code}")
         elif not stock_symbol:
@@ -1686,76 +1683,106 @@ def main():
             st.error("Failed to fetch financial data from the URL.")
 
     if file_path:
-        try:
-            file_extension = uploaded_file.name.split(".")[-1].lower()
-            if file_extension == "pdf":
-                structured_data_df = extract_structured_pdf_data(file_path) if 'extract_structured_pdf_data' in globals() else None
-                if structured_data_df is not None and not structured_data_df.empty:
-                    financial_data = structured_data_df
-                    st.success("Structured data (table) extracted from PDF.")
-                else:
-                    unstructured_data_df = extract_unstructured_pdf_data(file_path)
-                    if unstructured_data_df is not None and not unstructured_data_df.empty:
-                        financial_data = unstructured_data_df
-                        st.success("Unstructured data extracted from PDF.")
-                    else:
-                        st.error("Failed to extract data from PDF.")
-            elif file_extension in ["xlsx", "xls"]:
-                try:
-                    financial_data = pd.read_excel(file_path)
-                    st.success("Data extracted from Excel file.")
-                except Exception as e:
-                    st.error(f"Error reading Excel file: {e}")
-                    logging.error(f"Error reading Excel file: {e}")
-            elif file_extension in ["png", "jpg", "jpeg"]:
-                image_df = process_extracted_text_to_dataframe(extract_text_from_image(file_path))
-                if image_df is not None:
-                    financial_data = image_df
-                    st.success("Data extracted from image.")
-                else:
-                    st.error("Failed to extract data from image.")
-            else:
-                st.error("Unsupported file type. Please upload a PDF, Excel, or image file.")
-        finally:
-            cleanup_file(file_path)
+        financial_data = process_uploaded_file(file_path, uploaded_file.name)
+        cleanup_file(file_path)
 
     # Analyze financial data
     if st.button("Analyze Financial Data"):
         if financial_data is not None and not financial_data.empty:
-            ratios_df = calculate_ratios_with_standards(financial_data)
-            if not ratios_df.empty:
-                st.subheader("Financial Ratios with Industry Standards")
-                display_table(ratios_df, "Financial Ratios with Industry Standards")
-            else:
-                st.error("Could not calculate financial ratios.")
+            display_ratios(financial_data)
         else:
             st.warning("No financial data available to analyze. Please provide a URL or upload a file.")
 
-    # Button to fetch and display news
+    # Fetch and display news
     if st.button("Fetch News"):
-        if not company_name:
-            st.error("Please provide the company name.")
-            return
+        fetch_and_display_news(company_name, stock_symbol)
 
-        if not stock_symbol:
-            st.error("Could not resolve the stock symbol. Please check your inputs.")
-            return
+    # Display the last known data
+    display_last_known_data()
 
-        st.info(f"Fetching news for {company_name} ({stock_symbol})...")
-        news = fetch_news_with_api(company_name)
-        if news:
-            news_df = pd.DataFrame(news)
-            display_table(news_df, "Latest News")
-        else:
-            st.warning("No news found.")
+    # Start tracking
+    if st.button("Start Tracking"):
+        start_tracking(company_name, stock_symbol, exchange_code)
 
-    # Display the last known data if available
+    # Refresh data
+    if st.button("Refresh Data"):
+        refresh_data(company_name, stock_symbol, exchange_code)
+
+    # Fetch and display major world indices
+    if st.button("Fetch Major World Indices"):
+        fetch_and_display_indices()
+
+# Helper functions for repetitive UI logic
+def process_uploaded_file(file_path, file_name):
+    file_extension = file_name.split(".")[-1].lower()
+    if file_extension == "pdf":
+        return extract_pdf_data(file_path)
+    elif file_extension in ["xlsx", "xls"]:
+        return extract_excel_data(file_path)
+    elif file_extension in ["png", "jpg", "jpeg"]:
+        return extract_image_data(file_path)
+    else:
+        st.error("Unsupported file type. Please upload a PDF, Excel, or image file.")
+        return None
+
+def extract_pdf_data(file_path):
+    structured_data_df = extract_structured_pdf_data(file_path) if 'extract_structured_pdf_data' in globals() else None
+    if structured_data_df is not None and not structured_data_df.empty:
+        st.success("Structured data (table) extracted from PDF.")
+        return structured_data_df
+    unstructured_data_df = extract_unstructured_pdf_data(file_path)
+    if unstructured_data_df is not None and not unstructured_data_df.empty:
+        st.success("Unstructured data extracted from PDF.")
+        return unstructured_data_df
+    st.error("Failed to extract data from PDF.")
+    return None
+
+def extract_excel_data(file_path):
+    try:
+        st.success("Data extracted from Excel file.")
+        return pd.read_excel(file_path)
+    except Exception as e:
+        st.error(f"Error reading Excel file: {e}")
+        logging.error(f"Error reading Excel file: {e}")
+        return None
+
+def extract_image_data(file_path):
+    image_df = process_extracted_text_to_dataframe(extract_text_from_image(file_path))
+    if image_df is not None:
+        st.success("Data extracted from image.")
+        return image_df
+    st.error("Failed to extract data from image.")
+    return None
+
+def display_ratios(financial_data):
+    ratios_df = calculate_ratios_with_standards(financial_data)
+    if not ratios_df.empty:
+        st.subheader("Financial Ratios with Industry Standards")
+        display_table(ratios_df, "Financial Ratios with Industry Standards")
+    else:
+        st.error("Could not calculate financial ratios.")
+
+def fetch_and_display_news(company_name, stock_symbol):
+    if not company_name:
+        st.error("Please provide the company name.")
+        return
+    if not stock_symbol:
+        st.error("Could not resolve the stock symbol. Please check your inputs.")
+        return
+    st.info(f"Fetching news for {company_name} ({stock_symbol})...")
+    news = fetch_news_with_api(company_name)
+    if news:
+        news_df = pd.DataFrame(news)
+        display_table(news_df, "Latest News")
+    else:
+        st.warning("No news found.")
+
+def display_last_known_data():
     st.subheader("Last Known Financial Data")
     if latest_data["financial_data"]:
         display_table(latest_data["financial_data"], "Last Known Financial Data")
     else:
         st.info("No financial data available yet.")
-
     st.subheader("Last Known News")
     if latest_data.get("news") and isinstance(latest_data["news"], list):
         news_df = pd.DataFrame(latest_data["news"])
@@ -1766,54 +1793,33 @@ def main():
     else:
         st.info("No news available yet.")
 
-    # Button to start tracking
-    if st.button("Start Tracking"):
-        if not company_name:
-            st.error("Please provide the company name.")
-            return
+def start_tracking(company_name, stock_symbol, exchange_code):
+    if not company_name:
+        st.error("Please provide the company name.")
+        return
+    if not stock_symbol or not exchange_code:
+        st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
+        return
+    st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
+    fetch_and_update_data(stock_symbol, exchange_code)
 
-        if not stock_symbol or not exchange_code:
-            st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
-            return
+def refresh_data(company_name, stock_symbol, exchange_code):
+    if not company_name:
+        st.error("Please provide the company name.")
+        return
+    if not stock_symbol or not exchange_code:
+        st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
+        return
+    st.info(f"Refreshing data for {company_name} ({stock_symbol}) on {exchange_code}...")
+    fetch_and_update_data(stock_symbol, exchange_code)
 
-        st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
-        fetch_and_update_data(stock_symbol, exchange_code)
-
-    # Button to refresh data
-    if st.button("Refresh Data"):
-        if not company_name:
-            st.error("Please provide the company name.")
-            return
-
-        if not stock_symbol or not exchange_code:
-            st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
-            return
-
-        st.info(f"Refreshing data for {company_name} ({stock_symbol}) on {exchange_code}...")
-        fetch_and_update_data(stock_symbol, exchange_code)
-
-    # Button to fetch and display major world indices
-    if st.button("Fetch Major World Indices"):
-        st.info("Fetching major world indices data...")
-        indices_df = scrape_nyse_indices()
-        if indices_df is not None:
-            display_indices_chart(indices_df)
-        else:
-            st.error("Failed to fetch indices data.")
-
-    # Display the latest data
-    st.subheader("Latest Financial Data")
-    if latest_data["financial_data"]:
-        display_table(latest_data["financial_data"], "Latest Financial Data")
+def fetch_and_display_indices():
+    st.info("Fetching major world indices data...")
+    indices_df = scrape_nyse_indices()
+    if indices_df is not None:
+        display_indices_chart(indices_df)
     else:
-        st.info("No financial data available yet.")
-
-    st.subheader("Latest News")
-    if latest_data["news"]:
-        news_df = pd.DataFrame(latest_data["news"])
-        display_table(news_df, "Latest News")
-    else:
-        st.info("No news available yet.")
+        st.error("Failed to fetch indices data.")
 
 if __name__ == "__main__":
     main()
