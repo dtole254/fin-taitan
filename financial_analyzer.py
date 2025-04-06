@@ -1786,7 +1786,8 @@ def fetch_and_display_news(company_name, stock_symbol):
 
 def start_tracking(company_name, stock_symbol, exchange_code):
     """
-    Starts tracking financial data for the specified company and updates the global latest_data variable.
+    Starts tracking financial data for the specified company, updates the global latest_data variable,
+    and automatically initiates analysis of the financial data.
 
     Args:
         company_name (str): The name of the company.
@@ -1800,11 +1801,20 @@ def start_tracking(company_name, stock_symbol, exchange_code):
     if not stock_symbol or not exchange_code:
         st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
         return
+
     st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
     new_data = aggregate_data(stock_symbol, exchange_code)
     if new_data:
         latest_data["tracking_data"] = new_data.get("financial_data", {})
         st.success("Tracking started successfully.")
+
+        # Automatically initiate analysis of the financial data
+        if latest_data["tracking_data"]:
+            st.info("Automatically analyzing the tracked financial data...")
+            tracking_data_df = pd.DataFrame.from_dict(latest_data["tracking_data"], orient="index", columns=["Value"])
+            display_ratios(tracking_data_df)
+        else:
+            st.warning("No financial data available to analyze after starting tracking.")
     else:
         st.error("Failed to start tracking. Please try again.")
 
