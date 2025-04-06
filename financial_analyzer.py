@@ -1691,6 +1691,7 @@ def main():
 
     # Analyze financial data
     if st.button("Analyze Financial Data"):
+        logging.debug(f"Latest data: {latest_data}")  # Log the latest data for debugging
         if latest_data.get("financial_data") and isinstance(latest_data["financial_data"], dict):
             st.info("Analyzing data from 'Latest Financial Data' output.")
             latest_financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
@@ -2206,4 +2207,4 @@ if __name__ == "__main__":
         schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
 
     main()
-````
+`````
