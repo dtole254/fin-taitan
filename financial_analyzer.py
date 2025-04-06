@@ -1239,7 +1239,7 @@ def resolve_company_and_exchange(company_name):
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Global variable to store the latest data
-latest_data = {"financial_data": {}, "news": []}
+latest_data = {"financial_data": {}, "tracking_data": {}, "news": []}
 
 def fetch_and_update_data(stock_symbol, exchange_code=None):
     """
@@ -1784,6 +1784,15 @@ def fetch_and_display_news(company_name, stock_symbol):
         st.warning("No news found.")
 
 def start_tracking(company_name, stock_symbol, exchange_code):
+    """
+    Starts tracking financial data for the specified company and updates the global latest_data variable.
+
+    Args:
+        company_name (str): The name of the company.
+        stock_symbol (str): The stock symbol of the company.
+        exchange_code (str): The exchange code of the company.
+    """
+    global latest_data
     if not company_name:
         st.error("Please provide the company name.")
         return
@@ -1791,7 +1800,12 @@ def start_tracking(company_name, stock_symbol, exchange_code):
         st.error("Could not resolve the stock symbol or exchange code. Please check your inputs.")
         return
     st.info(f"Fetching initial data for {company_name} ({stock_symbol}) on {exchange_code}...")
-    fetch_and_update_data(stock_symbol, exchange_code)
+    new_data = aggregate_data(stock_symbol, exchange_code)
+    if new_data:
+        latest_data["tracking_data"] = new_data.get("financial_data", {})
+        st.success("Tracking started successfully.")
+    else:
+        st.error("Failed to start tracking. Please try again.")
 
 def refresh_data(company_name, stock_symbol, exchange_code):
     if not company_name:
@@ -2192,4 +2206,4 @@ if __name__ == "__main__":
         schedule_analysis("Example Company", website_url="https://example.com/financials", interval=ANALYSIS_INTERVAL)
 
     main()
-`````
+````
