@@ -1997,6 +1997,9 @@ def scrape_financial_data_selenium(self):
         pd.DataFrame: A DataFrame containing the scraped financial data, or None if an error occurs.
     """
     # ...existing code...
+    try:
+        # Add the code that should be executed here
+        pass
     finally:
         cleanup_selenium_driver(self.driver)
 
