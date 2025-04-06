@@ -1672,6 +1672,7 @@ def main():
             st.error(f"Could not resolve the exchange code for stock symbol '{stock_symbol}'. Please check the mappings.")
 
     # Process financial data from URL or uploaded file
+    global latest_data
     financial_data = None
     if financial_url:
         st.info(f"Fetching financial data from URL: {financial_url}")
@@ -1679,11 +1680,14 @@ def main():
         financial_data = analyzer.scrape_financial_data()
         if financial_data is not None:
             st.success("Financial data successfully fetched from the URL.")
+            latest_data["financial_data"] = financial_data.to_dict()
         else:
             st.error("Failed to fetch financial data from the URL.")
 
     if file_path:
         financial_data = process_uploaded_file(file_path, uploaded_file.name)
+        if financial_data is not None:
+            latest_data["financial_data"] = financial_data.to_dict()
         cleanup_file(file_path)
 
     # Analyze financial data
@@ -1691,10 +1695,11 @@ def main():
         if financial_data is not None and not financial_data.empty:
             display_ratios(financial_data)
         elif latest_data.get("financial_data"):
-            st.info("Analyzing data from 'Last Known Financial Data' output.")
-            display_ratios(pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"]))
+            st.info("Analyzing data from 'Latest Financial Data' output.")
+            latest_financial_data_df = pd.DataFrame.from_dict(latest_data["financial_data"], orient="index", columns=["Value"])
+            display_ratios(latest_financial_data_df)
         else:
-            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Last Known Financial Data' output.")
+            st.warning("No financial data available to analyze. Please provide a URL, upload a file, or use the 'Latest Financial Data' output.")
 
     # Fetch and display news
     if st.button("Fetch News"):
