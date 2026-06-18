@@ -1,4 +1,12 @@
 import streamlit as st
+
+# ── Must be the very first Streamlit call ──────────────────────────────────────
+st.set_page_config(
+    page_title="Financial Analyzer",
+    page_icon="📈",
+    layout="wide",
+)
+
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -6,58 +14,585 @@ import re
 import urllib.parse
 import urllib.request
 import logging
-import time  # For rate limiting
-from urllib.robotparser import RobotFileParser  # For robots.txt compliance
-from functools import lru_cache  # For caching robots.txt
-from time import sleep  # For retry mechanism
-import argparse  # For command-line arguments
-import json  # For configuration file support
-import PyPDF2  # For extracting text from PDF files
-import pdfplumber  # For extracting tables from PDF files
-from PIL import Image  # For image processing
-import pytesseract  # For OCR (Optical Character Recognition)
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-import os  # For environment variable management
-import threading  # For running background tasks
-import schedule  # For periodic tasks
-from concurrent.futures import ThreadPoolExecutor, as_completed  # For parallel execution
+import time
+import tempfile
+import os
+from urllib.robotparser import RobotFileParser
+from functools import lru_cache
+from time import sleep
+import json
+import threading
 
-# Parse command-line arguments for configuration
-parser = argparse.ArgumentParser(description="Financial Analyzer Configuration")
-parser.add_argument("--config_file", type=str, help="Path to a JSON configuration file")
-parser.add_argument("--user_agent", type=str, default="FinancialAnalyzerBot/1.0 (+https://github.com/yourusername/FinancialAnalysisApp)",
-                    help="User-Agent for HTTP requests")  # Replace yourusername
-parser.add_argument("--max_retries", type=int, default=3, help="Maximum number of retries for HTTP requests")
-parser.add_argument("--retry_delay", type=int, default=5, help="Initial delay (in seconds) between retries")
-args = parser.parse_args()
+# ── Optional heavy imports (lazy-loaded to avoid container failures) ───────────
+try:
+    import PyPDF2
+    import pdfplumber
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
 
-# Load configuration from file if provided, or use a default configuration
-DEFAULT_CONFIG = {
-    "user_agent": "FinancialAnalyzerBot/1.0 (+https://github.com/yourusername/FinancialAnalysisApp)",  # Replace yourusername
-    "max_retries": 3,
-    "retry_delay": 5,
-    "robots_timeout": 5,
-    "scraping_timeout": 10,
-    "news_api_key": None,  # Add default value for news API key
-    "alpha_vantage_api_key": None,  # Add default value for Alpha Vantage API
-    "enable_selenium": False,  # Add default value for selenium
-    "news_source": "NewsAPI",  # Default news source.
-    "finnhub_api_key": None,  # Add default value for Finnhub API Key
-    "world_indices_api": "AlphaVantage",  # Default for world indices
-    "rapidapi_key": None, # Default for RapidAPI
-}
+try:
+    from PIL import Image
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
-if args.config_file:
+# Selenium is only imported when explicitly enabled via env var
+ENABLE_SELENIUM = os.getenv("ENABLE_SELENIUM", "false").lower() == "true"
+if ENABLE_SELENIUM:
     try:
-        with open(args.config_file, 'r') as config_file:
-            config = json.load(config_file)
-            if not isinstance(config, dict):
-                raise ValueError("Configuration file must contain a JSON object.")
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.chrome.options import Options
+        from webdriver_manager.chrome import ChromeDriverManager
+    except ImportError:
+        ENABLE_SELENIUM = False
+        logging.warning("Selenium not available; ENABLE_SELENIUM forced to False.")
 
+# ── Secure configuration ───────────────────────────────────────────────────────
+# Load from environment variables first, then fall back to st.secrets, then None.
+# On Railway/Render: set env vars in the platform dashboard.
+# Locally: create a .env file and run `pip install python-dotenv`.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv optional; env vars may already be set by the platform
+
+def _get_secret(key: str, default=None):
+    """Resolve a secret from env → st.secrets → default."""
+    val = os.getenv(key)
+    if val:
+        return val
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+NEWS_API_KEY          = _get_secret("NEWS_API_KEY")
+ALPHA_VANTAGE_API_KEY = _get_secret("ALPHA_VANTAGE_API_KEY")
+FINNHUB_API_KEY       = _get_secret("FINNHUB_API_KEY")
+RAPIDAPI_KEY          = _get_secret("RAPIDAPI_KEY")
+
+USER_AGENT     = os.getenv("USER_AGENT",     "FinancialAnalyzerBot/1.0 (+https://github.com/yourusername/FinancialAnalysisApp)")
+MAX_RETRIES    = int(os.getenv("MAX_RETRIES",    "3"))
+RETRY_DELAY    = int(os.getenv("RETRY_DELAY",    "5"))
+ROBOTS_TIMEOUT = int(os.getenv("ROBOTS_TIMEOUT", "5"))
+SCRAPING_TIMEOUT = int(os.getenv("SCRAPING_TIMEOUT", "10"))
+NEWS_SOURCE      = os.getenv("NEWS_SOURCE",      "NewsAPI")   # "NewsAPI" | "Finnhub"
+WORLD_INDICES_API = os.getenv("WORLD_INDICES_API", "AlphaVantage")  # "AlphaVantage" | "RapidAPI"
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+class FinancialAnalyzer:
+    """Analyzes financial data for a given company."""
+
+    def __init__(self, company_name: str, website_url: str = None, financial_data=None):
+        self.company_name  = company_name
+        self.website_url   = website_url
+        self.financial_data = financial_data
+        self.stock_data    = None
+        self.news          = []
+        self.ticker        = None
+        self.indices_data  = {}
+
+    # ── Ticker resolution ──────────────────────────────────────────────────────
+    def resolve_company_ticker(self, company_name: str):
+        if not ALPHA_VANTAGE_API_KEY:
+            logging.warning("Alpha Vantage API key missing — ticker resolution skipped.")
+            return None
+        url = (
+            f"https://www.alphavantage.co/query"
+            f"?function=SYMBOL_SEARCH&keywords={company_name}"
+            f"&apikey={ALPHA_VANTAGE_API_KEY}"
+        )
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            matches = data.get("bestMatches", [])
+            if matches:
+                return matches[0]["1. symbol"]
+            logging.warning(f"No ticker found for: {company_name}")
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            logging.error(f"Ticker resolution error: {e}")
+        return None
+
+    # ── Stock price ────────────────────────────────────────────────────────────
+    def fetch_stock_price(self, ticker: str):
+        if not ALPHA_VANTAGE_API_KEY:
+            return None
+        url = (
+            f"https://www.alphavantage.co/query"
+            f"?function=GLOBAL_QUOTE&symbol={ticker}"
+            f"&apikey={ALPHA_VANTAGE_API_KEY}"
+        )
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            gq = data.get("Global Quote", {})
+            price_str = gq.get("05. price")
+            if price_str and price_str != "None":
+                return float(price_str)
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
+            logging.error(f"Stock price fetch error: {e}")
+        return None
+
+    # ── News ───────────────────────────────────────────────────────────────────
+    def fetch_company_news(self, company_name: str):
+        if NEWS_SOURCE == "NewsAPI":
+            return self._fetch_news_newsapi(company_name)
+        if NEWS_SOURCE == "Finnhub":
+            return self._fetch_news_finnhub(company_name)
+        logging.error(f"Unknown NEWS_SOURCE: {NEWS_SOURCE}")
+        return []
+
+    def _fetch_news_newsapi(self, company_name: str):
+        if not NEWS_API_KEY:
+            logging.warning("NEWS_API_KEY missing — NewsAPI skipped.")
+            return []
+        q = urllib.parse.quote_plus(company_name)
+        url = f"https://newsapi.org/v2/everything?q={q}&sortBy=publishedAt&apiKey={NEWS_API_KEY}"
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            return r.json().get("articles", [])
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            logging.error(f"NewsAPI error: {e}")
+        return []
+
+    def _fetch_news_finnhub(self, company_name: str):
+        if not FINNHUB_API_KEY:
+            logging.warning("FINNHUB_API_KEY missing — Finnhub skipped.")
+            return []
+        if not self.ticker:
+            logging.warning("Ticker required for Finnhub news.")
+            return []
+        url = f"https://finnhub.io/api/v3/company-news?symbol={self.ticker}&token={FINNHUB_API_KEY}"
+        try:
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            return r.json() or []
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            logging.error(f"Finnhub error: {e}")
+        return []
+
+    # ── robots.txt ────────────────────────────────────────────────────────────
+    @lru_cache(maxsize=10)
+    def fetch_robots_txt(self, robots_url: str, timeout: int = None):
+        timeout = timeout or ROBOTS_TIMEOUT
+        rp = RobotFileParser()
+        rp.set_url(robots_url)
+        try:
+            rp.read()
+            return rp
+        except Exception as e:
+            logging.warning(f"robots.txt fetch failed ({robots_url}): {e}")
+            return None
+
+    # ── Web scraping ──────────────────────────────────────────────────────────
+    def scrape_financial_data(self):
+        if not self.website_url:
+            st.error("Website URL not provided.")
+            return None
+
+        parsed = urllib.parse.urlparse(self.website_url)
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        try:
+            rp = self.fetch_robots_txt(robots_url)
+            if rp and not rp.can_fetch("*", self.website_url):
+                st.error(f"Scraping disallowed by robots.txt: {self.website_url}")
+                return None
+        except Exception as e:
+            st.warning(f"robots.txt check error: {e}")
+
+        retries, delay = 0, RETRY_DELAY
+        while retries < MAX_RETRIES:
+            try:
+                start = time.time()
+                r = requests.get(
+                    self.website_url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=SCRAPING_TIMEOUT,
+                )
+                r.raise_for_status()
+                time.sleep(max(1, time.time() - start))
+
+                soup = BeautifulSoup(r.content, "html.parser")
+                for table in soup.find_all("table"):
+                    text = table.text.lower()
+                    if any(kw in text for kw in ("balance sheet", "income statement", "cash flow")):
+                        rows = [[c.text.strip() for c in row.find_all(["td", "th"])] for row in table.find_all("tr")]
+                        df = pd.DataFrame(rows)
+                        if df.empty or df.iloc[0].isnull().any():
+                            continue
+                        df.columns = df.iloc[0]
+                        df = df[1:].dropna(axis=1, how="all").dropna(axis=0, how="all")
+                        for col in df.columns:
+                            try:
+                                df[col] = pd.to_numeric(
+                                    df[col].str.replace(r"[$,()]", "", regex=True),
+                                    errors="coerce",
+                                )
+                            except (ValueError, AttributeError):
+                                pass
+                        return df
+
+                st.error(f"No financial table found at: {self.website_url}")
+                return None
+
+            except requests.exceptions.Timeout:
+                st.error(f"Request timed out: {self.website_url}")
+                return None
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    retries += 1
+                    st.warning(f"Rate limited. Retrying in {delay}s… ({retries}/{MAX_RETRIES})")
+                    sleep(delay)
+                    delay *= 2
+                else:
+                    st.error(f"HTTP error: {e}")
+                    return None
+            except requests.RequestException as e:
+                st.error(f"Request error: {e}")
+                return None
+
+        st.error(f"Scraping failed after {MAX_RETRIES} retries.")
+        return None
+
+    # ── Ratio calculation ──────────────────────────────────────────────────────
+    def calculate_ratios(self):
+        if not isinstance(self.financial_data, pd.DataFrame):
+            st.error("Financial data unavailable or wrong format.")
+            return None
+
+        data = self.financial_data
+
+        def find_col(patterns):
+            for p in patterns:
+                match = next((c for c in data.columns if re.search(p, c, re.IGNORECASE)), None)
+                if match:
+                    return match
+            return None
+
+        cols = {
+            "revenue":     find_col([r"revenue", r"sales", r"total revenue", r"net sales"]),
+            "net_income":  find_col([r"net income", r"profit", r"net profit", r"earnings"]),
+            "total_assets": find_col([r"total assets", r"assets"]),
+            "total_liab":  find_col([r"total liabilities", r"liabilities"]),
+            "curr_assets": find_col([r"current assets", r"short-term assets"]),
+            "curr_liab":   find_col([r"current liabilities", r"short-term liabilities"]),
+            "equity":      find_col([r"total equity", r"shareholders equity", r"owners equity"]),
+            "cash":        find_col([r"cash", r"cash equivalents"]),
+            "inventory":   find_col([r"inventory", r"stock"]),
+            "cogs":        find_col([r"cost of goods sold", r"cogs", r"cost of sales"]),
+        }
+
+        missing = [k for k, v in cols.items() if v is None]
+        if missing:
+            st.error(f"Cannot calculate ratios — missing columns: {', '.join(missing)}")
+            return None
+
+        try:
+            c = cols  # shorthand
+            ratios = {
+                "gross_profit_margin":  ((data[c["revenue"]] - data[c["cogs"]]) / data[c["revenue"]]).mean() * 100,
+                "net_profit_margin":    (data[c["net_income"]] / data[c["revenue"]]).mean() * 100,
+                "return_on_assets":     (data[c["net_income"]] / data[c["total_assets"]]).mean() * 100,
+                "return_on_equity":     (data[c["net_income"]] / data[c["equity"]]).mean() * 100,
+                "debt_to_equity":       (data[c["total_liab"]] / data[c["equity"]]).mean(),
+                "current_ratio":        (data[c["curr_assets"]] / data[c["curr_liab"]]).mean(),
+                "quick_ratio":          ((data[c["curr_assets"]] - data[c["inventory"]]) / data[c["curr_liab"]]).mean(),
+                "cash_ratio":           (data[c["cash"]] / data[c["curr_liab"]]).mean(),
+                "inventory_turnover":   (data[c["cogs"]] / data[c["inventory"]]).mean(),
+                "asset_turnover":       (data[c["revenue"]] / data[c["total_assets"]]).mean(),
+                "equity_multiplier":    (data[c["total_assets"]] / data[c["equity"]]).mean(),
+            }
+            npm = ratios["net_profit_margin"]
+            at  = ratios["asset_turnover"]
+            em  = ratios["equity_multiplier"]
+            ratios["du_pont_roa"] = npm * at / 100 if all([npm, at]) else None
+            ratios["du_pont_roe"] = ratios["du_pont_roa"] * em if ratios["du_pont_roa"] and em else None
+            return ratios
+        except Exception as e:
+            st.error(f"Ratio calculation error: {e}")
+            return None
+
+    # ── File extraction ────────────────────────────────────────────────────────
+    def extract_financial_data(self, file_path: str):
+        if not file_path:
+            st.error("Empty file path.")
+            return None
+
+        ext = file_path.lower()
+        try:
+            if ext.endswith((".xlsx", ".xls")):
+                return pd.read_excel(file_path)
+
+            if ext.endswith(".pdf"):
+                if not PDF_AVAILABLE:
+                    st.error("PDF support not installed (pdfplumber / PyPDF2 missing).")
+                    return None
+                dfs = []
+                with pdfplumber.open(file_path) as pdf:
+                    for page in pdf.pages:
+                        for table in page.extract_tables():
+                            if table and table[0]:
+                                dfs.append(pd.DataFrame(table[1:], columns=table[0]))
+                if dfs:
+                    return pd.concat(dfs, ignore_index=True)
+                # Fallback: raw text
+                text = ""
+                with open(file_path, "rb") as f:
+                    reader = PyPDF2.PdfReader(f)
+                    for page in reader.pages:
+                        text += page.extract_text() or ""
+                if text:
+                    lines = [line.split() for line in re.sub(r"\s+", " ", text).strip().splitlines()]
+                    return pd.DataFrame(lines)
+                st.error("No tables or text found in PDF.")
+                return None
+
+            if ext.endswith((".png", ".jpg", ".jpeg")):
+                if not OCR_AVAILABLE:
+                    st.error("OCR support not installed (pytesseract / Pillow missing).")
+                    return None
+                text = pytesseract.image_to_string(Image.open(file_path))
+                lines = [line.split() for line in re.sub(r"\s+", " ", text).strip().splitlines()]
+                return pd.DataFrame(lines)
+
+            st.error(f"Unsupported file type: {file_path}")
+        except Exception as e:
+            st.error(f"File extraction error: {e}")
+        return None
+
+    # ── World indices ──────────────────────────────────────────────────────────
+    def fetch_major_world_indices(self):
+        if WORLD_INDICES_API == "AlphaVantage":
+            self._fetch_indices_alphavantage()
+        elif WORLD_INDICES_API == "RapidAPI":
+            self._fetch_indices_rapidapi()
+
+    def _fetch_indices_alphavantage(self):
+        if not ALPHA_VANTAGE_API_KEY:
+            return
+        indices = {"S&P 500": "SPX", "Dow Jones": "DJIA", "Nasdaq": "IXIC",
+                   "FTSE 100": "FTSE", "Nikkei 225": "N225", "Hang Seng": "HSI"}
+        for name, symbol in indices.items():
+            url = (
+                f"https://www.alphavantage.co/query"
+                f"?function=TIME_SERIES_DAILY&symbol={symbol}"
+                f"&apikey={ALPHA_VANTAGE_API_KEY}"
+            )
+            try:
+                r = requests.get(url, timeout=10)
+                r.raise_for_status()
+                data = r.json().get("Time Series (Daily)", {})
+                if data:
+                    latest = sorted(data.keys())[0]
+                    d = data[latest]
+                    close, open_ = float(d["4. close"]), float(d["1. open"])
+                    self.indices_data[name] = {
+                        "price": close,
+                        "change": close - open_,
+                        "change_percent": (close - open_) / open_ * 100,
+                    }
+            except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+                logging.error(f"Index fetch error ({name}): {e}")
+
+    def _fetch_indices_rapidapi(self):
+        if not RAPIDAPI_KEY:
+            return
+        url = "https://world-stock-index.p.rapidapi.com/v1/worldindices"
+        headers = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "world-stock-index.p.rapidapi.com"}
+        target_names = {"S&P 500", "Dow Jones Industrial Average", "Nasdaq Composite",
+                        "FTSE 100", "Nikkei 225", "Hang Seng Index"}
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            for item in r.json():
+                if item.get("name") in target_names:
+                    short = item["name"].replace(" Industrial Average", "").replace(" Composite", "").replace(" Index", "")
+                    self.indices_data[short] = {
+                        "price": item.get("price"),
+                        "change": item.get("change"),
+                        "change_percent": item.get("change_percent"),
+                    }
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            logging.error(f"RapidAPI indices error: {e}")
+
+    # ── Background tracking ────────────────────────────────────────────────────
+    def track_financial_data(self):
+        if self.ticker:
+            self.stock_data = self.fetch_stock_price(self.ticker)
+        self.news = self.fetch_company_news(self.company_name)
+        self.fetch_major_world_indices()
+
+    def start_tracking(self):
+        """Start a single background refresh thread, guarded by session_state."""
+        if st.session_state.get("_tracking_active"):
+            return  # Already running — don't spawn another thread
+
+        def _run():
+            while st.session_state.get("_tracking_active"):
+                self.track_financial_data()
+                time.sleep(600)
+
+        st.session_state["_tracking_active"] = True
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+    # ── News renderer (shared helper) ──────────────────────────────────────────
+    @staticmethod
+    def _render_news(articles, key_prefix: str = ""):
+        for i, article in enumerate(articles):
+            if NEWS_SOURCE == "NewsAPI":
+                st.write(f"**{article.get('title', 'No title')}**")
+                st.write(article.get("description", ""))
+                st.write(f"[Source]({article.get('url', '#')})")
+                st.write(f"Published: {article.get('publishedAt', 'N/A')}")
+            elif NEWS_SOURCE == "Finnhub":
+                st.write(f"**{article.get('headline', 'No headline')}**")
+                st.write(article.get("summary", ""))
+                st.write(f"[Source]({article.get('url', '#')})")
+                st.write(f"Published: {article.get('datetime', 'N/A')}")
+            st.markdown("---")
+
+    # ── Main UI ────────────────────────────────────────────────────────────────
+    def display_financial_data(self):
+        st.title("Real-Time Financial Analyzer")
+
+        # ── Inputs ──────────────────────────────────────────────────────────
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input(
+                "Company name (e.g. 'NVIDIA', 'Apple')",
+                value=self.company_name,
+                key="input_company",
+            )
+        with col2:
+            website_url = st.text_input(
+                "Financial statements URL (optional)",
+                value=self.website_url or "",
+                key="input_url",
+            )
+
+        # Update state only when changed
+        if company_name != self.company_name:
+            self.company_name = company_name
+            self.ticker = self.resolve_company_ticker(company_name)
+            if self.ticker:
+                st.success(f"Resolved: {company_name} → {self.ticker}")
+            else:
+                st.warning(f"Could not resolve ticker for '{company_name}'.")
+
+        self.website_url = website_url or None
+
+        # ── File upload ──────────────────────────────────────────────────────
+        uploaded = st.file_uploader(
+            "Upload financial data (PDF, Excel, Image)",
+            type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"],
+            key="uploader",
+        )
+        if uploaded is not None:
+            # Use tempfile to avoid permission issues on read-only filesystems
+            suffix = os.path.splitext(uploaded.name)[1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(uploaded.getbuffer())
+                tmp_path = tmp.name
+            try:
+                self.financial_data = self.extract_financial_data(tmp_path)
+                if self.financial_data is not None:
+                    st.success("Financial data uploaded successfully!")
+                else:
+                    st.error("Failed to extract financial data from file.")
+            finally:
+                os.unlink(tmp_path)
+
+        # ── Action buttons ───────────────────────────────────────────────────
+        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+
+        with btn_col1:
+            if st.button("Analyze", key="btn_analyze"):
+                if self.website_url:
+                    with st.spinner("Scraping financial data…"):
+                        self.financial_data = self.scrape_financial_data()
+                    if self.financial_data is not None:
+                        st.success("Data scraped successfully!")
+                if self.financial_data is not None:
+                    ratios = self.calculate_ratios()
+                    if ratios:
+                        st.subheader("Financial Ratios")
+                        st.json(ratios)
+                    else:
+                        st.warning("Could not calculate ratios.")
+                elif not self.website_url:
+                    st.info("Provide a URL or upload a file to analyze.")
+
+        with btn_col2:
+            if st.button("Fetch News", key="btn_news"):
+                with st.spinner("Fetching news…"):
+                    self.news = self.fetch_company_news(self.company_name)
+
+        with btn_col3:
+            if st.button("Start Tracking", key="btn_track"):
+                self.start_tracking()
+                st.success(f"Tracking started for {self.company_name}.")
+
+        with btn_col4:
+            if st.button("Refresh Data", key="btn_refresh"):
+                with st.spinner("Refreshing…"):
+                    self.track_financial_data()
+                st.success("Data refreshed!")
+
+        # ── Data display ─────────────────────────────────────────────────────
+        st.divider()
+
+        if self.financial_data is not None:
+            st.subheader("Financial Data")
+            st.dataframe(self.financial_data, use_container_width=True)
+
+        if self.stock_data is not None:
+            st.subheader("Stock Price")
+            st.metric(label=self.ticker or self.company_name, value=f"${self.stock_data:,.2f}")
+        elif st.session_state.get("_tracking_active"):
+            st.info("Waiting for first stock price update…")
+
+        if self.news:
+            st.subheader("Latest News")
+            self._render_news(self.news)
+
+        if self.indices_data:
+            st.subheader("Major World Indices")
+            idx_cols = st.columns(min(len(self.indices_data), 3))
+            for i, (name, d) in enumerate(self.indices_data.items()):
+                with idx_cols[i % 3]:
+                    delta_color = "normal" if d["change"] >= 0 else "inverse"
+                    st.metric(
+                        label=name,
+                        value=f"{d['price']:,.2f}",
+                        delta=f"{d['change']:+.2f} ({d['change_percent']:+.2f}%)",
+                        delta_color=delta_color,
+                    )
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    analyzer = FinancialAnalyzer(
+        company_name="Apple",
+        website_url="https://www.apple.com/investor/financial-information/",
+    )
+    analyzer.ticker = analyzer.resolve_company_ticker("Apple")
+    analyzer.display_financial_data()
             USER_AGENT = config.get("user_agent", DEFAULT_CONFIG["user_agent"])
             MAX_RETRIES = config.get("max_retries", DEFAULT_CONFIG["max_retries"])
             RETRY_DELAY = config.get("retry_delay", DEFAULT_CONFIG["retry_delay"])
