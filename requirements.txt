@@ -8,5 +8,6 @@ pytesseract
 pillow
 selenium
 webdriver-manager
-schedule
-fuzzywuzzy
+python-dotenv
+redis
+aiohttp
